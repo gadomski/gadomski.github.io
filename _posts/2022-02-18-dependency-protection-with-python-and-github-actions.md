@@ -34,13 +34,13 @@ These following examples are specific to Github actions, but the general concept
 
 There are a multitude of tools available for testing, dependency management, and more.
 We are not here to make tooling recommendations or evaluations, and so will stick to an almost-vanilla setup with default Python.
-The only exception is [pytest](https://docs.pytest.org/en/7.0.x/), which is useful enough (in this author’s opinion) to warrant inclusion in this post.
+The only exception is [pytest](https://docs.pytest.org/en/7.0.x/), which is useful enough (in my opinion) to warrant inclusion in this post.
 
 ## Define dependencies
 
 The first step is defining your requirements in `setup.cfg` properly.
 
-> You’ll notice we use `setup.cfg` instead of `setup.py`. `setup.cfg` is a modern addition to Python, and in this author’s opinion should be preferred whenever possible.
+> You’ll notice we use `setup.cfg` instead of `setup.py`. `setup.cfg` is a modern addition to Python, and in my opinion should be preferred whenever possible.
 > Configuration should be static and simply defined, and not require Python code to create.
 
 Define your dependencies with lower bounds only, e.g.:
@@ -61,7 +61,7 @@ This is obviously clunky, but hopefully you only have to do it once.
 
 ## What is a dependency?
 
-Great question. To this author,
+Great question. To me,
 
 > a dependency is any package that is explicitly imported in your package.
 
@@ -138,7 +138,7 @@ Finally, the pre-release looks something like this:
 
 If you’re repeating the same boilerplate setup over many Github actions jobs, it can be handy to refactor the boilerplate to a custom composite action.
 Github composite actions are exactly what they sound like: Github actions that are made up of other Github actions.
-This author didn’t find a quick walkthrough of using a own-repository Github action, so here’s the steps:
+I didn’t find a quick walkthrough of using a own-repository Github action, so here’s the steps:
 - Create a directory in your `.github` directory for your action, e.g. `.github/setup`
 - Create an `.github/setup/action.yml`
 - Set up your composite action.
@@ -225,7 +225,7 @@ jobs:
 ## In conclusion
 
 For a complete example of this implementation, with some extra bells and whistles (including a conda install and a Python version matrix), check out [this pull request](https://github.com/stac-utils/stactools/pull/228).
-In particular, the Github actions DRY-ification using the local composite action felt especially tasty – this author will be re-using that pattern often.
+In particular, the Github actions DRY-ification using the local composite action felt especially tasty – I will be re-using that pattern often.
 
 Here’s hoping this post helped explain how you might protect yourself from dependency breakages by using your CI as a defensive gate against your upstreams making changes that you haven’t expected.
 Cheers!  
