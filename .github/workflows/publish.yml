@@ -22,4 +22,4 @@ jobs:
       - name: Build
         run: bundle exec jekyll build
       - name: Commit and push
-        run: cd _site && git commit -av "github actions" && git push
+        run: cd _site && git commit -a -m "github actions" && git push
