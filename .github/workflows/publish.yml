@@ -21,5 +21,7 @@ jobs:
           bundler-cache: true
       - name: Build
         run: bundle exec jekyll build
+      - run: git config --global user.email "pete.gadomski@gmail.com"
+      - run: git config --global user.name "Pete Gadomski"
       - name: Commit and push
         run: cd _site && git commit -a -m "github actions" && git push
