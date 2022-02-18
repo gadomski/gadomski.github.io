@@ -1,0 +1,1030 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="http://www.gadom.ski/feed.xml" rel="self" type="application/atom+xml" /><link href="http://www.gadom.ski/" rel="alternate" type="text/html" /><updated>2022-02-18T14:07:17-07:00</updated><id>http://www.gadom.ski/feed.xml</id><title type="html">@gadomski</title><subtitle>dogs and charts, mostly
+</subtitle><entry><title type="html">Dependency protection with Python and Github actions</title><link href="http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions.html" rel="alternate" type="text/html" title="Dependency protection with Python and Github actions" /><published>2022-02-18T00:00:00-07:00</published><updated>2022-02-18T00:00:00-07:00</updated><id>http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions</id><content type="html" xml:base="http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions.html">&lt;blockquote&gt;
+  &lt;p&gt;Many thanks to Tom Augsburger for inspiring this post with &lt;a href=&quot;https://github.com/stac-utils/stactools/issues/227&quot;&gt;this issue&lt;/a&gt; and providing additional background on the problem space.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Dependency management is a notoriously hard problem, and it is significantly harder if you are working in an interpreted language that has unconstrained imports from all dependent projects, e.g. Python.
+There have been gallons of digital ink spilled discussing the pros and cons of various dependency management schemes and tools (e.g. &lt;a href=&quot;https://python-poetry.org/&quot;&gt;poetry&lt;/a&gt;).
+This post does not aim to try to solve dependency management; instead, it outlines one approach to protect against dependency breakages using Github actions for your Python library.&lt;/p&gt;
+
+&lt;p&gt;The “correct” approach to dependency management depends heavily on the scope of your software and its intended use.
+If you’re building an executable or executable-ish (e.g. a command line utility), it is unquestionably the best practice to lock your dependency tree with a Pipfile.lock, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pip freeze &amp;gt; requirements.txt&lt;/code&gt;, or something similar.
+The same almost certainty holds for API endpoints (e.g. Lambdas); these are often implicitly locked by executing from a (frozen) Docker image.
+The picture changes quickly if you’re building a library that is used by downstream projects, because if you freeze dependencies you almost certainly break downstream dependency resolution.
+So, if you’re building a library, you need a more flexible model.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://iscinumpy.dev/post/bound-version-constraints/&quot;&gt;This post&lt;/a&gt; outlines a wonderful case for not using upper bound version constraints in Python, and is worth your time to read in full.
+To summarize, the article begins with SemVer skepticism and awareness of the complexities of large Python environments, and concludes that upper bounds will more often break your code unnecessarily rather than protecting you from API changes.
+It recommends two actions to protect against dependency breakage:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;Provide lower bounds but not upper bounds&lt;/li&gt;
+  &lt;li&gt;Test three (or four) cases in CI:
+    &lt;ul&gt;
+      &lt;li&gt;Standard: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pip install -U my-package&lt;/code&gt;&lt;/li&gt;
+      &lt;li&gt;Minimum requirements: provide the minimum supported version for each dependency and test against that&lt;/li&gt;
+      &lt;li&gt;Pre-release: identify key upstream packages and test against pre-release versions, e.g. installed with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pip install --pre&lt;/code&gt;&lt;/li&gt;
+      &lt;li&gt;(optional) Extra requires: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pip install -U 'my-package[all]'&lt;/code&gt;, where [all] installs all possibly cases of extra_requires&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;While straightforward in concept, executing this strategy on Github actions requires some workflow setup that can be a little fiddly. 
+These following examples are specific to Github actions, but the general concepts can be ported to other CI systems.&lt;/p&gt;
+
+&lt;h2 id=&quot;assumptions&quot;&gt;Assumptions&lt;/h2&gt;
+
+&lt;p&gt;There are a multitude of tools available for testing, dependency management, and more.
+We are not here to make tooling recommendations or evaluations, and so will stick to an almost-vanilla setup with default Python.
+The only exception is &lt;a href=&quot;https://docs.pytest.org/en/7.0.x/&quot;&gt;pytest&lt;/a&gt;, which is useful enough (in my opinion) to warrant inclusion in this post.&lt;/p&gt;
+
+&lt;h2 id=&quot;define-dependencies&quot;&gt;Define dependencies&lt;/h2&gt;
+
+&lt;p&gt;The first step is defining your requirements in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;setup.cfg&lt;/code&gt; properly.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;You’ll notice we use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;setup.cfg&lt;/code&gt; instead of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;setup.py&lt;/code&gt;. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;setup.cfg&lt;/code&gt; is a modern addition to Python, and in my opinion should be preferred whenever possible.
+Configuration should be static and simply defined, and not require Python code to create.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Define your dependencies with lower bounds only, e.g.:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-cfg&quot;&gt;[options]
+install_requires =
+    foo &amp;gt;= 1.2
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Finding the lower bounds of your dependencies might be tricky. The best way we’ve found so far is the following:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;(in a virtual environment) Install a version of a dependency&lt;/li&gt;
+  &lt;li&gt;Run tests&lt;/li&gt;
+  &lt;li&gt;If they pass, try a lower dependency&lt;/li&gt;
+  &lt;li&gt;If they fail, try a higher dependency&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This is obviously clunky, but hopefully you only have to do it once.&lt;/p&gt;
+
+&lt;h2 id=&quot;what-is-a-dependency&quot;&gt;What is a dependency?&lt;/h2&gt;
+
+&lt;p&gt;Great question. To me,&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;a dependency is any package that is explicitly imported in your package.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2 id=&quot;create-requirements-mintxt&quot;&gt;Create requirements-min.txt&lt;/h2&gt;
+
+&lt;p&gt;Once you’ve defined your dependencies, create a requirements-min.txt file in the root of your repository, with each dependency listed but with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;&amp;gt;=&lt;/code&gt; replaced with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;==&lt;/code&gt;, e.g.:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;foo == 1.2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;the-atomic-unit-of-test&quot;&gt;The atomic unit of test&lt;/h2&gt;
+
+&lt;p&gt;Assuming the simplest Python package possible, with dependencies specified in setup.cfg and development dependencies specified in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;requirements-dev.txt&lt;/code&gt;, the most basic Github action would look something like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;CI&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;on&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;push&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;branches&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;main&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;pull_request&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;jobs&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;test&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;runs-on&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;ubuntu-latest&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;steps&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/checkout@v2&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/setup-python@v2&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;with&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;na&quot;&gt;python-version&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;3.9'&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install .&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install development requirements&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install -r requirements-dev.txt&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Test&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pytest&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We will use this framework to define improvements to help test the use-cases outlined in the first section.&lt;/p&gt;
+
+&lt;h2 id=&quot;test-standard-min-and-pre-release&quot;&gt;Test standard, min, and pre-release&lt;/h2&gt;
+
+&lt;p&gt;The standard case stays the same as the atomic unit of test.&lt;/p&gt;
+
+&lt;p&gt;The minimum version looks like this (snipped to the relevant bits):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;snip&amp;gt;
+      - name: Install minimum versions
+        run: pip install -r requirements-min.txt
+      - name: Install
+        run: pip install .
+&amp;lt;snip&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Notice that the minimum versions need to be installed before the package.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;It can be tricky to ensure that the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;requirements-min.txt&lt;/code&gt; file stays in-sync with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;setup.cfg&lt;/code&gt;.
+While you could generate the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;requirements-min.txt&lt;/code&gt; file automatically, we find it better to keep it explicit, and instead check to ensure consistency using a script, e.g. &lt;a href=&quot;https://github.com/stac-utils/stactools/blob/d1e084f8df6c43626d76c6a2a33559c4ce8fe33e/scripts/check_minimum_requirements&quot;&gt;this one&lt;/a&gt;.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Finally, the pre-release looks something like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;snip&amp;gt;
+      - name: Install
+        run: pip install .
+      - name: Install pre-release versions
+        run: pip install -U --pre my-critical-dependency
+&amp;lt;snip&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;bonus-refactor-using-composite-github-actions&quot;&gt;Bonus: Refactor using composite Github actions&lt;/h2&gt;
+
+&lt;p&gt;If you’re repeating the same boilerplate setup over many Github actions jobs, it can be handy to refactor the boilerplate to a custom composite action.
+Github composite actions are exactly what they sound like: Github actions that are made up of other Github actions.
+I didn’t find a quick walkthrough of using a own-repository Github action, so here’s the steps:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;Create a directory in your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.github&lt;/code&gt; directory for your action, e.g. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.github/setup&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;Create an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.github/setup/action.yml&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;Set up your composite action.
+For a simple example, set up your pip cache and update pip:&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Setup&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Set up the pip cache&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;inputs&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;pip-cache-hash&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;The hash used for the pip cache&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;required&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;False&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;${{ hashFiles('setup.cfg', 'requirements-dev.txt') }}&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;runs&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;using&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;composite&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;steps&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/setup-python@v2&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;with&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;python-version&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;3.9'&lt;/span&gt;
+    &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Set up pip cache&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/cache@v2&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;with&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;path&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;~/.cache/pip&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;key&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;$-pip-$&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;restore-keys&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;$-pip-&lt;/span&gt;
+    &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Update pip&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;python -m pip install --upgrade pip&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now you can use the action in your workflow.&lt;/p&gt;
+
+&lt;h2 id=&quot;complete-example&quot;&gt;Complete example&lt;/h2&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;CI&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;on&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;push&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;branches&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;main&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;pull_request&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;jobs&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;test&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;runs-on&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;ubuntu-latest&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;steps&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/checkout@v2&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;./.github/setup&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install .&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install development requirements&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install -r requirements-dev.txt&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Test&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pytest&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;min-version&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;min-version&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;runs-on&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;ubuntu-latest&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;steps&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/checkout@v2&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;./.github/setup&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install minimum versions&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install -r requirements-min.txt&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install .&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install development requirements&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install -r requirements-dev.txt&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Test&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pytest&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;pre-release&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pre-release&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;runs-on&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;ubuntu-latest&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;steps&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;actions/checkout@v2&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;uses&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;./.github/setup&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install .&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install pre-release versions&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install -U --pre my-critical-dependency&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Install development requirements&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pip install -r requirements-dev.txt&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Test&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;run&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;pytest&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;in-conclusion&quot;&gt;In conclusion&lt;/h2&gt;
+
+&lt;p&gt;For a complete example of this implementation, with some extra bells and whistles (including a conda install and a Python version matrix), check out &lt;a href=&quot;https://github.com/stac-utils/stactools/pull/228&quot;&gt;this pull request&lt;/a&gt;.
+In particular, the Github actions DRY-ification using the local composite action felt especially tasty – I will be re-using that pattern often.&lt;/p&gt;
+
+&lt;p&gt;Here’s hoping this post helped explain how you might protect yourself from dependency breakages by using your CI as a defensive gate against your upstreams making changes that you haven’t expected.
+Cheers!&lt;/p&gt;</content><author><name></name></author><category term="python" /><category term="github" /><category term="github-actions" /><category term="dependencies" /><summary type="html">Many thanks to Tom Augsburger for inspiring this post with this issue and providing additional background on the problem space.</summary></entry><entry><title type="html">FOSS4GNA 2019</title><link href="http://www.gadom.ski/2019/04/26/FOSS4G-NA.html" rel="alternate" type="text/html" title="FOSS4GNA 2019" /><published>2019-04-26T00:00:00-06:00</published><updated>2019-04-26T00:00:00-06:00</updated><id>http://www.gadom.ski/2019/04/26/FOSS4G-NA</id><content type="html" xml:base="http://www.gadom.ski/2019/04/26/FOSS4G-NA.html">&lt;p&gt;&lt;img src=&quot;/img/2019-04-26-foss4gna-title-slide.png&quot; alt=&quot;The title slide of my FOSS4GNA talk.&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Whelp, looks like it’s been a year since I’ve updated this www.gadom.ski, since my last post was about FOSS4G-NA 2018.&lt;/p&gt;
+
+&lt;p&gt;This year I talked about calulating snow depths with &lt;a href=&quot;https://pdal.io/&quot;&gt;PDAL&lt;/a&gt;, essentialy a “methods of doing The Science” talk.
+I did a compare-and-contrast between a couple of different methods of calculating snow depths, and showed how you can extend PDAL’s functionality with Python and by hacking on the codebase yourself.
+The slides are available for download as a Powerpoint &lt;a href=&quot;https://www.dropbox.com/s/3ua5qqq4j1ge250/2019-04-16-SnowDepthsPDAL.pptx?dl=0&quot;&gt;here&lt;/a&gt; (it’s big b/c lots of movies).&lt;/p&gt;
+
+&lt;p&gt;I enjoyed the conference, particularly because once I made it to my hotel I never got in a car – bike/scooter share in San Diego FTW.
+Also the beer was very good, and I may or may not have snuck of Wednesday afternoon to watch that incredible Man City v. Tottenham Champions League game.
+Good times.&lt;/p&gt;</content><author><name></name></author><category term="pdal" /><category term="snow" /><summary type="html"></summary></entry><entry><title type="html">FOSS4GNA 2018</title><link href="http://www.gadom.ski/2018/05/18/FOSS4GNA.html" rel="alternate" type="text/html" title="FOSS4GNA 2018" /><published>2018-05-18T00:00:00-06:00</published><updated>2018-05-18T00:00:00-06:00</updated><id>http://www.gadom.ski/2018/05/18/FOSS4GNA</id><content type="html" xml:base="http://www.gadom.ski/2018/05/18/FOSS4GNA.html">&lt;p&gt;&lt;img src=&quot;/img/2018-05-16-foss4gna-title-slide.png&quot; alt=&quot;The title slide of my FOSS4GNA talk.&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;On Monday, May 14th, I got to present at FOSS4GNA in St. Louis, MO.
+I talked abput our &lt;a href=&quot;http://atlas.lidar.io/dashboard&quot;&gt;ATLAS glacier monitoring system&lt;/a&gt;, which uses an autonomous LiDAR scanner to regularly survey the Helheim Glacier.
+I’ve put the slides &lt;a href=&quot;https://www.dropbox.com/s/hczywhflqwrv9he/2018-05-14-Glacier-surface-velocities.pptx?dl=0&quot;&gt;in my Dropbox&lt;/a&gt;, since they’re &lt;em&gt;very&lt;/em&gt; big (&amp;gt;400MB) due to a bunch of high-resolution pictures and movies.
+The talk was half science, half software engineering; the science bits focused on lasers and glaciers, and the software bits walked people through my stack, especially non-trivial PDAL pipelines.
+Key parts of my stack are:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.pdal.io/&quot;&gt;PDAL&lt;/a&gt;: of course&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/gadomski/cpd-rs&quot;&gt;cpd-rs&lt;/a&gt;: a Rust implementation of the Coherent Point Drift point set registration algorithm&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://gmt.soest.hawaii.edu/&quot;&gt;GMT&lt;/a&gt;: batch maps&lt;/li&gt;
+  &lt;li&gt;oh so much more…&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;I couldn’t help but be impressed by &lt;em&gt;how nice&lt;/em&gt; everyone was at FOSS4GNA!
+Compared to academic or DOD conferences, this conference was almost devoid of those who felt the need to prove just how smart they were as soon as you met them.
+Everyone was friendly, interested in what you were doing, and generally there just to have a good time and learn.
+How refreshing.&lt;/p&gt;
+
+&lt;p&gt;The conference was disappointingly short of people of color and women; my eyeball estimate was at least 70% male, and vanishingly small percentage of PoC.
+We &lt;del&gt;can&lt;/del&gt; must do better.&lt;/p&gt;</content><author><name></name></author><category term="pdal" /><category term="glaciers" /><category term="cpd" /><summary type="html"></summary></entry><entry><title type="html">Snow depths with PDAL</title><link href="http://www.gadom.ski/2018/02/28/pdal-hs.html" rel="alternate" type="text/html" title="Snow depths with PDAL" /><published>2018-02-28T00:00:00-07:00</published><updated>2018-02-28T00:00:00-07:00</updated><id>http://www.gadom.ski/2018/02/28/pdal-hs</id><content type="html" xml:base="http://www.gadom.ski/2018/02/28/pdal-hs.html">&lt;p&gt;For the past several years we’ve been using terrestrial LiDAR to monitor snow-covered mountainsides for avalanche stability and mitigation &lt;a class=&quot;citation&quot; href=&quot;#Deems2015&quot;&gt;(Deems et al., 2015; Deems et al., 2015)&lt;/a&gt;.
+We’ve even gotten some &lt;a href=&quot;http://www.dailycamera.com/science_environment/ci_30756446/boulder-scientist-targets-more-effective-safer-avalanche-mitigation&quot;&gt;local press&lt;/a&gt; for our efforts.
+We just completed processing for our data from the Seven Sisters at Loveland Pass, CO, where we’ve been working with the Colorado Department of Transportation (CDOT) to assess the effectivity of their installed &lt;a href=&quot;https://www.denverpost.com/2015/09/18/colorado-mountain-passes-get-remote-controlled-gas-avalanche-control-finally/&quot;&gt;GasEx&lt;/a&gt; systems.
+I used &lt;a href=&quot;https://www.pdal.io/&quot;&gt;PDAL&lt;/a&gt; to calculate and visualize the height of snow (HS) for these data, and the process was non-trivial enough to be worth a blog post.&lt;/p&gt;
+
+&lt;h2 id=&quot;source-data&quot;&gt;Source data&lt;/h2&gt;
+
+&lt;p&gt;The data were georeferenced using Riegl’s proprietary &lt;a href=&quot;http://www.riegl.com/products/software-packages/riscan-pro/&quot;&gt;RiSCAN Pro&lt;/a&gt; and exported to the &lt;a href=&quot;https://www.laszip.org/&quot;&gt;laz&lt;/a&gt; format.
+Our workflow uses UTM coordiantes inside RiSCAN Pro, which doesn’t play nicely with Riegl’s GeoSysManager, so the georeferenced laz files from RiSCAN Pro don’t have correct spatial reference information in the las header.
+Additionaly, as seen below, there’s a lot of in-air noise (usually due to blowing snow) and a lot of high-density points near that scanner that we aren’t really interested in.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2017-04-28-SevenSisters-in-air-snow-annotated.png&quot; alt=&quot;Annotated scan from 2017-04-28 of the Seven Sisters.&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;We’re also interested in removing all the trees in the scan, as we only really want a bare earth surface and the snow surface for our HS measurements.&lt;/p&gt;
+
+&lt;h2 id=&quot;generating-reference-surfaces&quot;&gt;Generating reference surfaces&lt;/h2&gt;
+
+&lt;p&gt;The first step is to post-process the point clouds, as delivered from Riegl, using the following pipeline:&lt;/p&gt;
+
+&lt;div class=&quot;language-json highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;pipeline&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;readers.las&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;spatialreference&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;EPSG:6342+5703&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.crop&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;polygon&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;POLYGON((424285.054199 4392521.066437,424264.463623 4392406.715332,424205.290527 4392190.98584,424201.560547 4392140.775757,423641.87146 4391921.607422,423426.168762 4391845.724854,423401.804596 4391842.146729,423041.956669 4392012.294861,422662.966858 4392335.28717,422759.23587 4392382.745789,422961.488438 4392474.017517,423273.389465 4392601.933075,423419.496582 4392539.133209,423538.245728 4392509.673706,423915.109497 4392511.763214,424070.769165 4392542.10498,424201.549438 4392565.36734,424248.287964 4392556.360779,424280.257935 4392531.412476,424285.054199 4392521.066437))&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.outlier&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.smrf&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;ignore&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Classification[7:7]&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;writers.las&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Step-by-step, this pipeline:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Reads in the las data and tags it as UTM 13N / NAD83(2011)&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;, with the NAVD88 vertical datum.&lt;/li&gt;
+  &lt;li&gt;Crops the data to a pre-defined area of interest.&lt;/li&gt;
+  &lt;li&gt;Uses the outlier filter to add the classifation value “7” (Low point/Noise) to all noise points.&lt;/li&gt;
+  &lt;li&gt;Classifies all ground points using PDAL’s smrf filter, ignoring noise points.
+Note that for snow-on scans, we’re hoping that both bare ground and snow surfaces get classified as ground.&lt;/li&gt;
+  &lt;li&gt;Writes out the data to a las file.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;You’ll notice that neither the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;readers.las&lt;/code&gt; stage or the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;writers.las&lt;/code&gt; stage have filenames specified; this is because we use this pipeline via the following makefile rule.
+The same concept applies for all future pipelines, as well:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;build/full-resolution/%&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;laz/from-riscan/% pipelines/from-riscan.json&lt;/span&gt;
+	&lt;span class=&quot;p&quot;&gt;@&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;mkdir&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;-p&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;dir&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;$@&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;)&lt;/span&gt;
+	pdal pipeline pipelines/from-riscan.json &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--readers&lt;/span&gt;.las.filename&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$&amp;lt;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--writers&lt;/span&gt;.las.filename&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$@&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This lets us quickly create full-resolution processed laz files in parallel using a simple make command e.g. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make -j 6 all&lt;/code&gt;,
+Our full resolution, classified point cloud might look like this, colorized by classification (green: ground/snow, blue: noise, red: non-ground/snow):&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2016-01-21-SevenSisters-classification.png&quot; alt=&quot;Classification of a 2016-01-21 point cloud.&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;With the full resolution, classified points, we then can create bare-earth (or bare-snow) surfaces for each scan.
+The bare-earth surface from our snow-off scan will be the reference surface for all snow depth (HS) calculations, and the bare-snow surfaces from snow-on scans will be used for change in snow depth (dHS) calculations, which are useful for analysing the distribution of snow depth after a storm or identifying the snow removed/deposited by an avalanche.
+To create the bare-earth/bare-snow surfaces, we use the following pipeline:&lt;/p&gt;
+
+&lt;div class=&quot;language-json highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;pipeline&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;readers.las&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.range&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;limits&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Classification[2:2]&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;writers.gdal&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;resolution&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mf&quot;&gt;0.5&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;output_type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;min&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;window_size&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The “2” classifications were added by the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;filters.smrf&lt;/code&gt;, and we choose a 0.5m resolution for our raster.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2016-01-21-SevenSisters-dem.png&quot; alt=&quot;DEM of 2016-01-21 data.&quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;calculating-snow-depths&quot;&gt;Calculating snow depths&lt;/h2&gt;
+
+&lt;p&gt;Once we have the reference surfaces, we can calculate the vertical distance (depth of snow in the vertical) between a snow-on point cloud and the bare-earth raster.
+PDAL doesn’t have a tool that’s perfectly suited for the job, but we can make it happen with a bit of elbow grease:&lt;/p&gt;
+
+&lt;div class=&quot;language-json highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;pipeline&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;readers.las&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.range&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;limits&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Classification[2:2]&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.ferry&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;dimensions&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;GpsTime=Red&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.colorization&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;dimensions&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Red&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.range&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;limits&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Red[0:]&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.python&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;function&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;diff&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;script&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;scripts/hs.py&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.range&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;limits&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;GpsTime[0:]&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;filters.colorinterp&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;minimum&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;maximum&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;6&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;ramp&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;pestel_shades&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;dimension&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;GpsTime&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+            &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;writers.las&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;There’s a lot going on, so let’s walk through this pipeline:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Reads in las data.&lt;/li&gt;
+  &lt;li&gt;Selects ground/snow points (as identified by &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;filters.smrf&lt;/code&gt;).&lt;/li&gt;
+  &lt;li&gt;Assigns the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GpsTime&lt;/code&gt; field into the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Red&lt;/code&gt; field on each point.
+The las format uses a two-byte unsigned integer to store color values, but we need &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Red&lt;/code&gt; to be a double for the next step.&lt;/li&gt;
+  &lt;li&gt;Colorizes the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Red&lt;/code&gt; field of the point cloud.
+When this pipeline is invoked on the command line, we’ll provide the bare-earth raster, which means that the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Red&lt;/code&gt; field (which is a double, thanks to step 3), will be the elevation of the bare earth.&lt;/li&gt;
+  &lt;li&gt;Filters out all points where the bare-earth elevation is less than zero, which includes all points that don’t have a bare-earth elevation (the colorization filter assigns a low negative value for all points where it doesn’t have a raster cell).&lt;/li&gt;
+  &lt;li&gt;Runs the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;hs.py&lt;/code&gt; script (included below), which calculates the difference between the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Red&lt;/code&gt; field and the point’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Z&lt;/code&gt; value and assigns the result (HS) to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Gpstime&lt;/code&gt;.&lt;/li&gt;
+  &lt;li&gt;Removes all points with a negative HS.&lt;/li&gt;
+  &lt;li&gt;Assigns a rainbow color scheme to each point, based on the HS (stored in GpsTime).&lt;/li&gt;
+  &lt;li&gt;Writes the data out to a las file.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;We use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GpsTime&lt;/code&gt; field because support for custom attributes in las files is patchy at best.
+PDAL can write extra dimensions, but not all visualization/processing software can handle them.
+For this dataset, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GpsTime&lt;/code&gt; field isn’t super useful, and it’s a double in a las file, so it’s a convenient place to store arbitrary double data.&lt;/p&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;hs.py&lt;/code&gt; script used in step 6 looks like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;def&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;diff&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ins&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;outs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;):&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;red&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ins&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Red&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;z&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ins&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Z&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;hs&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;z&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;red&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;outs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;GpsTime&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;hs&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;True&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This simply calculates the difference between the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Red&lt;/code&gt; field (bare earth elevation) and “Z” (snow surface elevation) and stores it in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GpsTime&lt;/code&gt;.
+After it’s all done, we get a point cloud, colorized by HS, with the actual HS value stored in the GPS time field.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2016-01-21-SevenSisters-hs.png&quot; alt=&quot;HS on 2016-01-21.&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;You’ll see that our ground/snow classification wasn’t perfect, and that a lot of trees stumps were left behind, leading to those red (high) HS values.
+Still, we get a good sense of snow distribution, and, if we do this process for a bunch of scans, we can analyse the change in HS over time.&lt;/p&gt;
+
+&lt;h2 id=&quot;future-work&quot;&gt;Future work&lt;/h2&gt;
+
+&lt;p&gt;It’d be nice to store the HS in a custom attribute, as well, so that software that can handle las extra bytes (e.g. CloudCompare) could display the data with correct labeling.
+But the current solution, in my opinion, is good enough!&lt;/p&gt;
+
+&lt;h2 id=&quot;references&quot;&gt;References&lt;/h2&gt;
+
+&lt;ol class=&quot;bibliography&quot;&gt;&lt;li&gt;&lt;span id=&quot;Deems2015&quot;&gt;Deems, J. S., Gadomski, P. J., Vellone, D., Evanczyk, R., LeWinter, A. L., Birkeland, K. W., &amp;amp; Finnegan, D. C. (2015). Mapping starting zone snow depth with a ground-based lidar to assist avalanche control and forecasting. &lt;i&gt;Cold Regions Science and Technology&lt;/i&gt;, &lt;i&gt;120&lt;/i&gt;, 101–108. https://doi.org/10.1016/j.coldregions.2015.09.002&lt;/span&gt;&lt;/li&gt;
+&lt;li&gt;&lt;span id=&quot;deems2015ground&quot;&gt;Deems, J. S., LeWinter, A. L., Gadomski, P. J., &amp;amp; Finnegan, D. C. (2015). Ground-based LiDAR integration with avalanche control operations: target planning and assessment of control effectiveness. &lt;i&gt;AGU Fall Meeting Abstracts&lt;/i&gt;.&lt;/span&gt;&lt;/li&gt;&lt;/ol&gt;
+
+&lt;h2 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;These data were Epoch:2010. Note to self: find out if the new PROJ can handle epochs. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name></name></author><category term="pdal" /><category term="snow" /><category term="seven-sisters" /><category term="cdot" /><summary type="html">For the past several years we’ve been using terrestrial LiDAR to monitor snow-covered mountainsides for avalanche stability and mitigation (Deems et al., 2015; Deems et al., 2015). We’ve even gotten some local press for our efforts. We just completed processing for our data from the Seven Sisters at Loveland Pass, CO, where we’ve been working with the Colorado Department of Transportation (CDOT) to assess the effectivity of their installed GasEx systems. I used PDAL to calculate and visualize the height of snow (HS) for these data, and the process was non-trivial enough to be worth a blog post.</summary></entry><entry><title type="html">AGU 2017</title><link href="http://www.gadom.ski/2017/12/15/AGU.html" rel="alternate" type="text/html" title="AGU 2017" /><published>2017-12-15T00:00:00-07:00</published><updated>2017-12-15T00:00:00-07:00</updated><id>http://www.gadom.ski/2017/12/15/AGU</id><content type="html" xml:base="http://www.gadom.ski/2017/12/15/AGU.html">&lt;p&gt;I presented a poster at &lt;a href=&quot;https://fallmeeting.agu.org/2017/program-overview/&quot;&gt;the AGU 2017 fall meeting&lt;/a&gt;.
+The long-winded title was “Three summer of high-resolution, high-accuracy velocity data of Helheim Glacier, as measured by an automated terrestrial LiDAR scanner: methods, challenges, and applications.”
+If you want to look at the PDF version of the poster, I have it &lt;a href=&quot;/pdf/2017-AGU-Gadomski-Poster.pdf&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2016-07-08-1200-helheim-vz.png&quot; alt=&quot;One of the z-velocity images I made for the poster&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;A few quick things I learned while making this thing:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;&lt;a href=&quot;http://gmt.soest.hawaii.edu/&quot;&gt;GMT&lt;/a&gt; is The Jam.
+As a part of this work, I had to create a velocity map for each dimension for each pair of scans, i.e. over two thousand maps.
+Totally undoable with a point-and-click GIS.
+GMT scripted everything and let me update my map styles by changing a script and running make.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.ffmpeg.org/&quot;&gt;ffmpeg&lt;/a&gt; is some good stuff as well.
+I’m using it to make movies out of those maps.
+I have a couple of tweaks to make before I want to publish anything, but standby for those movies, they’re a good way to visualize what’s going on.&lt;/li&gt;
+  &lt;li&gt;Even though the AGU site says that their poster boards are 6’ x 4’, they’re not.
+Make a 5’ x 4’ or 5’ x 3 poster if you don’t want to look like a giant goober.&lt;/li&gt;
+  &lt;li&gt;I’m still not totally sold on &lt;a href=&quot;https://github.com/kahing/goofys&quot;&gt;goofys&lt;/a&gt; for working with files in s3 buckets.
+On one hand, it &lt;em&gt;can&lt;/em&gt; streamline a lot of operations.
+On the other hand, I find that stuff like &lt;a href=&quot;http://www.gdal.org/&quot;&gt;gdal&lt;/a&gt; can error when trying to write to goofys mounts, forcing an extra tmp-file-then-copy-then-remove step.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;All in all, though, it was a great experience and some work I’m actually proud of!&lt;/p&gt;</content><author><name></name></author><category term="cpd" /><category term="helheim" /><summary type="html">I presented a poster at the AGU 2017 fall meeting. The long-winded title was “Three summer of high-resolution, high-accuracy velocity data of Helheim Glacier, as measured by an automated terrestrial LiDAR scanner: methods, challenges, and applications.” If you want to look at the PDF version of the poster, I have it here.</summary></entry><entry><title type="html">2017 voting guide for Longmont, CO</title><link href="http://www.gadom.ski/2017/10/28/voting-guide.html" rel="alternate" type="text/html" title="2017 voting guide for Longmont, CO" /><published>2017-10-28T00:00:00-06:00</published><updated>2017-10-28T00:00:00-06:00</updated><id>http://www.gadom.ski/2017/10/28/voting-guide</id><content type="html" xml:base="http://www.gadom.ski/2017/10/28/voting-guide.html">&lt;ul id=&quot;markdown-toc&quot;&gt;
+  &lt;li&gt;&lt;a href=&quot;#introduction&quot; id=&quot;markdown-toc-introduction&quot;&gt;Introduction&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#city-of-longmont-mayor-brian-bagley-or-sarah-levison&quot; id=&quot;markdown-toc-city-of-longmont-mayor-brian-bagley-or-sarah-levison&quot;&gt;City of Longmont Mayor: &lt;strong&gt;Brian Bagley&lt;/strong&gt; (or Sarah Levison)&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#city-of-longmont-council-member-at-large-ron-gallegos-polly-christensen-or-aren-rodriguez&quot; id=&quot;markdown-toc-city-of-longmont-council-member-at-large-ron-gallegos-polly-christensen-or-aren-rodriguez&quot;&gt;City of Longmont Council Member At Large: &lt;strong&gt;Ron Gallegos, Polly Christensen&lt;/strong&gt; (or Aren Rodriguez)&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#county-issue-1a-005-sales-and-use-tax-extension-yes&quot; id=&quot;markdown-toc-county-issue-1a-005-sales-and-use-tax-extension-yes&quot;&gt;County issue 1A (0.05% sales and use tax extension): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#county-question-1b-sheriff-term-limit-extension-to-five-terms-yes&quot; id=&quot;markdown-toc-county-question-1b-sheriff-term-limit-extension-to-five-terms-yes&quot;&gt;County question 1B (Sheriff term limit extension to five terms): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#county-question-1c-allow-municipal-broadband-yes&quot; id=&quot;markdown-toc-county-question-1c-allow-municipal-broadband-yes&quot;&gt;County question 1C (Allow municipal broadband): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#city-of-longmont-ballot-issue-2h-taxes-for-public-safety-yes&quot; id=&quot;markdown-toc-city-of-longmont-ballot-issue-2h-taxes-for-public-safety-yes&quot;&gt;City of Longmont ballot issue 2H (Taxes for public safety): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#city-of-longmont-ballot-issue-2i-weed-tax-no&quot; id=&quot;markdown-toc-city-of-longmont-ballot-issue-2i-weed-tax-no&quot;&gt;City of Longmont ballot issue 2I (Weed tax): &lt;strong&gt;No&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#city-of-longmont-ballot-question-2j-water-storage-bond-no&quot; id=&quot;markdown-toc-city-of-longmont-ballot-question-2j-water-storage-bond-no&quot;&gt;City of Longmont ballot question 2J (Water storage bond): &lt;strong&gt;No&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#city-of-longmont-ballot-question-2k-judge-robert-j-frick-yes&quot; id=&quot;markdown-toc-city-of-longmont-ballot-question-2k-judge-robert-j-frick-yes&quot;&gt;City of Longmont ballot question 2K (Judge Robert J. Frick): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#conclusion&quot; id=&quot;markdown-toc-conclusion&quot;&gt;Conclusion&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;#footnotes&quot; id=&quot;markdown-toc-footnotes&quot;&gt;Footnotes&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h1 id=&quot;introduction&quot;&gt;Introduction&lt;/h1&gt;
+
+&lt;p&gt;Welcome to my Longmont, CO 2017 voting guide!&lt;/p&gt;
+
+&lt;p&gt;Back when I lived in California, my buddy and I would get together and hash through each of the issues on the (absolutly crazy) California ballots.
+I’ve tried to keep the tradition up here in Colorado, though at this point I’ve been doing most of my research on my own.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;
+&lt;a href=&quot;https://www.facebook.com/pete.gadomski/posts/1132537846842585&quot;&gt;Last year I posted my voting guide to Facebook&lt;/a&gt;, and this year I’m putting it up here.&lt;/p&gt;
+
+&lt;p&gt;These guides are completely based on internet research, as I haven’t attended any debates this year.
+Some resources I use are:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.vote411.org&quot;&gt;https://www.vote411.org&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://www.lwvbc.org&quot;&gt;http://www.lwvbc.org&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://www.timescall.com&quot;&gt;http://www.timescall.com&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://www.boulderweekly.com&quot;&gt;http://www.boulderweekly.com&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.youtube.com/watch?v=M6QYLH7tyP8&quot;&gt;https://www.youtube.com/watch?v=M6QYLH7tyP8&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://longmontcolorado.gov/departments/departments-n-z/public-information/2017-ballot-issues-3563&quot;&gt;https://longmontcolorado.gov/departments/departments-n-z/public-information/2017-ballot-issues-3563&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;The candidate websites.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;I’ll update this guide when I learn new information, and mark those updates.
+I’ve arranged things in the order that they appear on my ballot.&lt;/p&gt;
+
+&lt;h1 id=&quot;city-of-longmont-mayor-brian-bagley-or-sarah-levison&quot;&gt;City of Longmont Mayor: &lt;strong&gt;Brian Bagley&lt;/strong&gt; (or Sarah Levison)&lt;/h1&gt;
+
+&lt;p&gt;The three candidates are:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Sarah Levison
+    &lt;ul&gt;
+      &lt;li&gt;&lt;a href=&quot;https://www.levison4longmont.com/&quot;&gt;Website&lt;/a&gt;&lt;/li&gt;
+      &lt;li&gt;Endorsements
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;https://www.levison4longmont.com/candidate-surveys/#block-yui_3_17_2_8_1473434359311_18422&quot;&gt;Sierra Club&lt;/a&gt;&lt;/li&gt;
+          &lt;li&gt;&lt;a href=&quot;http://www.boulderweekly.com/content-archives/voters-guide/vote-2017/election-2017/&quot;&gt;Boulder Weekly&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;Brian J. Bagley
+    &lt;ul&gt;
+      &lt;li&gt;&lt;a href=&quot;http://bagleyformayor.com/&quot;&gt;Website&lt;/a&gt;&lt;/li&gt;
+      &lt;li&gt;Endorsements
+        &lt;ul&gt;
+          &lt;li&gt;&lt;a href=&quot;http://www.timescall.com/longmont-local-news/ci_31165568/longmont-mayoral-candidate-brian-bagley-scores-incumbent-mayors&quot;&gt;Current mayor Dennis Coombs&lt;/a&gt;&lt;/li&gt;
+        &lt;/ul&gt;
+      &lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;Roger Lange
+    &lt;ul&gt;
+      &lt;li&gt;&lt;a href=&quot;http://rogerlangeformayor.com/&quot;&gt;Website&lt;/a&gt;&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;I wish I had gone a mayoral debate, as the &lt;a href=&quot;http://www.timescall.com/longmont-local-news/ci_31348988/longmont-mayoral-council-candidates-face-off-debates&quot;&gt;Times-Call article&lt;/a&gt; is frustratingly thin on details.
+Not much seems to separate these three, so we have to find fine distinctions to pick a candidate.
+I do find Bagley’s emphasis on the transient population a bit worrisome, since I feel that “fighting” homelessness usually smacks of punching down.
+But in liu of a Latino candidate, Bagley seems to me to be the best candidate to represent the concerns of Longmont’s Latino community, e.g. the way he easily cites relevant local organizations.
+Levison is the “greenest” candidate, and so if you’re more concerned about local fracking then she might be your lady.
+Lange seems like a nice guy.
+I’m going to go Bagley because of his connection with the Latino community, but there’s not a clear front-runner here IMO.&lt;/p&gt;
+
+&lt;h1 id=&quot;city-of-longmont-council-member-at-large-ron-gallegos-polly-christensen-or-aren-rodriguez&quot;&gt;City of Longmont Council Member At Large: &lt;strong&gt;Ron Gallegos, Polly Christensen&lt;/strong&gt; (or Aren Rodriguez)&lt;/h1&gt;
+
+&lt;p&gt;The five candidates are:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Aren Rodriguez&lt;/li&gt;
+  &lt;li&gt;Cathy Jarrett&lt;/li&gt;
+  &lt;li&gt;Ron Gallegos&lt;/li&gt;
+  &lt;li&gt;Alex Sammoury&lt;/li&gt;
+  &lt;li&gt;Polly Christensen&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;NOT CATHY JARRETT.
+The Boulder Weekly reports that &lt;a href=&quot;http://www.boulderweekly.com/content-archives/voters-guide/vote-2017/election-2017/&quot;&gt;she doesn’t believe human activity contributes to climate change&lt;/a&gt;, and there’s other stuff floating around the internet that makes it pretty clear that she’s not for me.&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;
+The rest of the candidates seem to fall into the “good enough” category, but I’m going to go with Ron Gallegos and Polly Christensen.
+I love some of Ron’s ideas, such as his &lt;a href=&quot;https://www.gallegosforcitycouncil.com/issues/&quot;&gt;Spanish Plaza and St. Vrain river walk&lt;/a&gt;, even if they might turn out to not be fiscally reasonable.
+And Polly is the only incumbent, and I like her shout-out to ESL and her overall issue positions (development, affordable housing, weed, etc).
+Aren Rodriguez seems &lt;em&gt;very&lt;/em&gt; informed on affordable housing issues and would be a good alternate.
+Alex Sammoury is experienced and involved, but nothing jumps out to put him above anyone else.&lt;/p&gt;
+
+&lt;h1 id=&quot;county-issue-1a-005-sales-and-use-tax-extension-yes&quot;&gt;County issue 1A (0.05% sales and use tax extension): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;This is a sales and use tax that gets funneled by the county to various non-profits.
+I always start from a “no” position on tax questions, but this one seems worth keeping.
+“Human services” are notoriously tricky for governments to handle on their own, so the idea of (hopefully) picking quality non-profits to shoulder some of the burden makes sense.
+I’d like to know more about the process by which non-profits are chosen to receive these moneys, but for now I’ll chalk that up to “not enough time” and bite the tax bullet.&lt;/p&gt;
+
+&lt;p&gt;Plus, sales and use in Boulder County includes plenty of tourists, Google-ites, and trustifarians, so I’m more than happy to ping them for cash to support local services.&lt;/p&gt;
+
+&lt;h1 id=&quot;county-question-1b-sheriff-term-limit-extension-to-five-terms-yes&quot;&gt;County question 1B (Sheriff term limit extension to five terms): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;I am anti-term-limit, and there’s no reason to make an exception here.
+As Boulder Weekly &lt;a href=&quot;http://www.boulderweekly.com/content-archives/voters-guide/vote-2017/election-2017/&quot;&gt;put it&lt;/a&gt;:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;So, vote yes, but also let’s scrap the whole idea of term limits for this office next time.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h1 id=&quot;county-question-1c-allow-municipal-broadband-yes&quot;&gt;County question 1C (Allow municipal broadband): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;This question doesn’t cost anything, it’s just voter permission to do municipal broadband in the future, maybe.
+The only reason I would vote against this is to cynically beat back the rest of the county and keep Longmont, with its &lt;a href=&quot;https://www.longmontcolorado.gov/departments/departments-e-m/longmont-power-communications/broadband-service&quot;&gt;wonderful fiber&lt;/a&gt;, on top of the heap.
+I’m not that cynical.&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:3&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;city-of-longmont-ballot-issue-2h-taxes-for-public-safety-yes&quot;&gt;City of Longmont ballot issue 2H (Taxes for public safety): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;Starting from “no”, as usual, I can’t help but think about how easy it is to just say “support the firefighters” and get a tax raise.
+But I end up on “yes” here because public safety investment does support everyone in our community, not just the rich, while the sales and use tax hopefully extracts money from brewery-visitors and Estes-park travellers.&lt;/p&gt;
+
+&lt;h1 id=&quot;city-of-longmont-ballot-issue-2i-weed-tax-no&quot;&gt;City of Longmont ballot issue 2I (Weed tax): &lt;strong&gt;No&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;Start from “no” on taxes.
+This isn’t a “useful” sin tax, as I don’t see a big reason to disincentivise people from smoking weed.
+The City’s argument that they need more money to regulate possible future weed stores feels a bit contrived; first of all, they haven’t approved those weed stores yet, second of all if it costs a lot, regulate less (it’s just weed).
+The other half of the revenues they say will go to affordable housing, and I’m generally against “honeypotting” taxes by sliding in attractive spending to some unrelated issue.
+I don’t see why weed smokers should pay a larger percentage of affordable housing costs; it would make more sense to tax large lots to fund affordable housing, since large lots make affordable housing more scarce.&lt;sup id=&quot;fnref:4&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:4&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt;
+No compelling “yes” reasons present themselves, so we stay at “no”.&lt;/p&gt;
+
+&lt;h1 id=&quot;city-of-longmont-ballot-question-2j-water-storage-bond-no&quot;&gt;City of Longmont ballot question 2J (Water storage bond): &lt;strong&gt;No&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;This is a perfect&lt;sup id=&quot;fnref:5&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:5&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt; Colorado political question.
+Should we, a growth-minded Front Range community, take another step towards boosting more water from west of the divide for ourselves?
+It is so easy to get bogged down in details here.
+Does Longmont really need the water?
+How bad would it be if we pulled out of the Windy Gap team of cities?
+Will we hurt Longmont’s growth if we stop funding the Windy Gap?
+Can the Colorado support this additional water pull?&lt;/p&gt;
+
+&lt;p&gt;I tried to parse this one out for a while, and couldn’t really come up with a good distillation of all of the factors.
+So, as a scientist and (sorta) snow/water guy, I’m going to keep it simple: it’s f-ing crazy to suck water through a tube under the mountains, so we should do it less.
+We’ll have to figure out some other way of managing our water on this side of the divide.
+“No”.&lt;/p&gt;
+
+&lt;h1 id=&quot;city-of-longmont-ballot-question-2k-judge-robert-j-frick-yes&quot;&gt;City of Longmont ballot question 2K (Judge Robert J. Frick): &lt;strong&gt;Yes&lt;/strong&gt;&lt;/h1&gt;
+
+&lt;p&gt;I can’t find anything bad about him, and I found &lt;a href=&quot;http://www.dailycamera.com/news/ci_30622924/longmont-community-justice-partnership-expects-50-more-referrals&quot;&gt;this good thing about restorative sentences&lt;/a&gt; and this &lt;a href=&quot;http://bizwest.com/2016/06/21/new-longmont-judge-give-movie-theater-liquor-license-app-second-look/&quot;&gt;other good thing about drinking beer in cinemas&lt;/a&gt;.
+So “yes”.&lt;/p&gt;
+
+&lt;h1 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h1&gt;
+
+&lt;p&gt;It should go without saying, but these are my personal views, and others may disagree.
+Stay involved in local issues and local elections!
+I myself am resolving to do a better job of attending debates and council meetings, to stay engaged and informed.
+Because clichés can be true.&lt;/p&gt;
+
+&lt;h1 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h1&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;If you want to help out next year, hit me up! I love talking about this stuff with people. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;The “other stuff” includes comments reportedly made during the October 12th, 2017 debate, but I can’t find a reputable transcript or any video of that debate. Yet another reminder, if we needed one, that staying engaged is key, particularity in “small towns” that have spotty local journalism. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Yet. &lt;a href=&quot;#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:4&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;It may surprise you to learn I own a small house on a small lot. &lt;a href=&quot;#fnref:4&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:5&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;In a terrible way. &lt;a href=&quot;#fnref:5&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name></name></author><category term="personal" /><category term="voting-guide" /><category term="longmont" /><summary type="html"></summary></entry><entry><title type="html">Bespoke thermal-LiDAR integration at the South Pole</title><link href="http://www.gadom.ski/2017/10/19/bespoke-thermal.html" rel="alternate" type="text/html" title="Bespoke thermal-LiDAR integration at the South Pole" /><published>2017-10-19T00:00:00-06:00</published><updated>2017-10-19T00:00:00-06:00</updated><id>http://www.gadom.ski/2017/10/19/bespoke-thermal</id><content type="html" xml:base="http://www.gadom.ski/2017/10/19/bespoke-thermal.html">&lt;p&gt;We’ve worked with &lt;a href=&quot;http://www.riegl.com/&quot;&gt;Riegl&lt;/a&gt; and &lt;a href=&quot;http://www.infratec.eu/&quot;&gt;InfraTec&lt;/a&gt; to integrate an InfraTec VarioCAM HD with Riegl &lt;a href=&quot;https://en.wikipedia.org/wiki/Lidar#Terrestrial_lidar&quot;&gt;TLS&lt;/a&gt; scanners.
+To date, this integration is not complete; we can take pictures with an InfraTec camera on top of a Riegl scanner, and we have developed a calibration for the camera and the mounting, but full software integration is still in the future.
+Even with incomplete integration, we brought a Riegl scanner and a InfraTec camera to the South Pole in January of 2017 to perform a three-dimensional survey of infrastructure with integrated thermal information.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2017-01-SouthPole-overview.png&quot; alt=&quot;2017-01-SouthPole overview image&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;This is an overview picture of the resultant data.
+The legend is incorrect, the colorization is in degrees Celsius; I’ll explain why that’s “time” later in this post.&lt;/p&gt;
+
+&lt;p&gt;This post walks through the procedures and the software used to do the integration.&lt;/p&gt;
+
+&lt;h2 id=&quot;source-data&quot;&gt;Source data&lt;/h2&gt;
+
+&lt;p&gt;The TLS data were collected in 23 individual scan positions throughout the facility.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/2017-01-SouthPole-scan-positions.jpg&quot; alt=&quot;2017-01-SouthPole scan positions&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Each scan position included between five and nine thermal images, captured from a camera mounted on top of the TLS scanner.
+The heavy lifting of registering and QC-ing all of these scans was done by my colleague Adam.
+He also used InfraTec’s software to convert each thermal image (in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;irb&lt;/code&gt; format, discussed later) to a simple colormap jpg, and imported these colormaps into Riegl.
+This ensured that each thermal image had an associated image record in the RiSCAN Pro project&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;coordinate-systems&quot;&gt;Coordinate systems&lt;/h2&gt;
+
+&lt;p&gt;As a part of the registration process, each scan position has its own Scanner’s Own Position (SOP) matrix, a 4x4 transformation matrix that brings points from the Scanner’s Own Coordinate System (SOCS) to the PRoject Coordinate System (PRCS).
+The project as a whole then has one Project’s Own Position (POP) matrix, which brings points from PRCS to the GLobal Coordinate System (GLCS).&lt;/p&gt;
+
+&lt;p&gt;Each thermal image also has an associated Camera’s Own Position (COP) matrix, which changes with each picture because the scanner head rotates for each new image.
+The camera mounting also has its own transformation matrix that represents the camera’s position with relation to the scanner origin, known as the mounting matrix (MM).
+Together, the mounting matrix and the COP matrix can bring a point from SOCS to the CaMera’s Coordinate System (CMCS).&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/img/riegl-coordinate-systems.png&quot; alt=&quot;Riegl coordinate systems&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;These matrices are all contained in the the RiSCAN Pro project file, an xml file that resides in each RiSCAN Pro project directory.
+I created the &lt;a href=&quot;https://github.com/gadomski/riscan-pro&quot;&gt;riscan-pro&lt;/a&gt; Rust library to parse these matrics from RiSCAN Pro projects and use them for coordinate conversions (and more).
+You can see the methods used to go up and down this “coordinate ladder” in &lt;a href=&quot;https://docs.rs/riscan-pro/0.2.1/riscan_pro/struct.Point.html&quot;&gt;the library’s documentation&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;camera-calibration&quot;&gt;Camera calibration&lt;/h2&gt;
+
+&lt;p&gt;In order to convert points from the CMCS to actual image pixels, certain properties of the camera itself must be known or discovered.
+We’ve developed a camera calibration for our InfraTec VarioCAM HD, and this calibration is contained inside of the RiSCAN Pro project.
+The math underlying this calibration is beyond me, but it is laid out exactly in the Riegl project documentation, so I simply tranferred it over to &lt;a href=&quot;https://docs.rs/riscan-pro/0.2.1/src/riscan_pro/camera_calibration.rs.html#70-105&quot;&gt;my Rust library&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The camera calibration converts three-dimensional CMCS points to a two-dimensional pixel.
+This math isn’t perfect — it can produce “valid” pixel values for points that are, e.g., behind the camera.
+My library does some additional filtering to ensure that each CMCS point maps to a valid pixel value or &lt;a href=&quot;https://doc.rust-lang.org/std/option/&quot;&gt;None&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;putting-it-together&quot;&gt;Putting it together&lt;/h2&gt;
+
+&lt;p&gt;We now have all the math we need to:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Find the corresponding thermal pixel, if one exists, for each SOCS point.&lt;/li&gt;
+  &lt;li&gt;Convert SOCS points to GLCS points.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Now we just need to read our data.&lt;/p&gt;
+
+&lt;p&gt;Our point clouds are stored as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;rxp&lt;/code&gt; files, which is the proprietary file format from Riegl.
+Thankfully, they provide &lt;a href=&quot;http://www.riegl.com/index.php?id=224&quot;&gt;RiVLib&lt;/a&gt;&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;, which provides a library for reading &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;rxp&lt;/code&gt; data.
+I made a FFI wrapper around their library and a helper library in the Rust workspace &lt;a href=&quot;https://github.com/gadomski/rivlib-rs&quot;&gt;rivlib-rs&lt;/a&gt;, which I use to read rxp points into Rust.&lt;/p&gt;
+
+&lt;p&gt;A similar situation presents itself with the thermal data.
+InfraTec’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;irb&lt;/code&gt; format is closed and proprietary, but they also provide a library&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:3&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt; for reading &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;irb&lt;/code&gt; files.
+Again, I wrote a FFI wrapper and helper library&lt;sup id=&quot;fnref:4&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:4&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt;, this time named &lt;a href=&quot;https://github.com/gadomski/irbacs-sys&quot;&gt;irbacs-sys&lt;/a&gt; and &lt;a href=&quot;https://github.com/gadomski/irb-rs&quot;&gt;irb-rs&lt;/a&gt; respectively.&lt;/p&gt;
+
+&lt;p&gt;The pieces are now all set up.
+To review, these are the individual rust crates we have so far:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;riscan-pro&lt;/strong&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;irb&lt;/strong&gt;
+    &lt;ul&gt;
+      &lt;li&gt;depends on &lt;strong&gt;irbacs-sys&lt;/strong&gt;&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;scanifc&lt;/strong&gt;
+    &lt;ul&gt;
+      &lt;li&gt;depends on &lt;strong&gt;scanifc-sys&lt;/strong&gt;&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Each one of these crates stands more-or-less on its own, and could be used in other projects.
+Everything from here on out will be pretty us-specific, so it probably belongs in its own crate: the &lt;strong&gt;Thermal Colorization Engine&lt;/strong&gt;, or &lt;a href=&quot;https://github.com/gadomski/tce&quot;&gt;&lt;strong&gt;tce&lt;/strong&gt;&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The basic mechanics are pretty simple:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;For each SOCS point in each rxp file, find all temperature values that overlap that point.&lt;/li&gt;
+  &lt;li&gt;Average these temperature values to produce a single temperature value.&lt;/li&gt;
+  &lt;li&gt;Create a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;las&lt;/code&gt; point with the following attributes:
+    &lt;ol&gt;
+      &lt;li&gt;XYZ in GLCS.&lt;/li&gt;
+      &lt;li&gt;GpsTime set to the temperature, in °C.&lt;/li&gt;
+      &lt;li&gt;RGB set to a color-ramp value, as determined by the temperature.&lt;/li&gt;
+    &lt;/ol&gt;
+  &lt;/li&gt;
+  &lt;li&gt;Write the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;las&lt;/code&gt; point out to a file, one output file per input &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;rxp&lt;/code&gt; file.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;las&lt;/code&gt; format doesn’t do custom attributes well.
+The extra bytes mechanism does exist for las 1.4, but it’s not universally supported&lt;sup id=&quot;fnref:5&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:5&quot; class=&quot;footnote&quot; rel=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt;.
+The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GpsTime&lt;/code&gt; field is convenient for us, since it’s (a) a double field and (b) pretty useless for our TLS data.
+So we shove the temperature value into there.&lt;/p&gt;
+
+&lt;h2 id=&quot;coordinate-reference-system-and-compression&quot;&gt;Coordinate reference system and compression&lt;/h2&gt;
+
+&lt;p&gt;My &lt;a href=&quot;https://github.com/gadomski/las-rs&quot;&gt;las-rs&lt;/a&gt; library doesn’t support compressed output or coordinate reference system information, so we use PDAL to do a bit of post-processing.&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;pdal translate &lt;span class=&quot;nt&quot;&gt;-i&lt;/span&gt; infile.las &lt;span class=&quot;nt&quot;&gt;-o&lt;/span&gt; outfile.laz &lt;span class=&quot;nt&quot;&gt;-f&lt;/span&gt; sample &lt;span class=&quot;nt&quot;&gt;-f&lt;/span&gt; outlier &lt;span class=&quot;nt&quot;&gt;--filters&lt;/span&gt;.sample.radius&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;0.02 &lt;span class=&quot;nt&quot;&gt;--writers&lt;/span&gt;.las.a_srs&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;EPSG:32761+5773&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;outfile.laz&lt;/code&gt; tells PDAL to write a compressed laz output.
+The sample filter resamples the data to roughly 0.02m sampling using the &lt;a href=&quot;https://www.pdal.io/stages/filters.sample.html&quot;&gt;poisson method&lt;/a&gt;.
+And the outlier filter removes blatantly invalid in-air points.&lt;/p&gt;
+
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h2&gt;
+
+&lt;p&gt;It took a decent amount of work, but we now have an engine that can be used to colorize Riegl-collected TLS data with InfraTec thermal imagery.
+I won’t be sad when Riegl does this integration themselves, but until then, this’ll do.&lt;/p&gt;
+
+&lt;h2 id=&quot;updates&quot;&gt;Updates&lt;/h2&gt;
+
+&lt;p&gt;&lt;strong&gt;2017-10-24&lt;/strong&gt;: I’ve put the commented source of the Thermal Colorization Engine up &lt;a href=&quot;http://www.gadom.ski/tce/&quot;&gt;here&lt;/a&gt;, if you’re curious how it all works.&lt;/p&gt;
+
+&lt;h2 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h2&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;RiSCAN Pro is Riegl’s terrestrial laser scanning software. It’s not a terrible piece of kit, but it’s a pretty black-box system, and doing the same thing over and over again isn’t it’s strongest suit. Highly manual tasks, such as registration, are best done in RiSCAN Pro, so we use RiSCAN Pro projects as our starting point for this custom integration. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;To their customers. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;You think they’d give this to non-customers? SMH. &lt;a href=&quot;#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:4&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Discerning readers might notice that I used a workspace for my Riegl wrappers, but two seperate repositories for my InfraTec wrappers. Why? The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;irb-rs&lt;/code&gt; library includes some code that doesn’t require &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;irbacs-sys&lt;/code&gt; to run, namely the ability to read text exports created by InfraTec software. Workspaces seem to work best when you don’t fiddle with features much – when &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cargo build --all&lt;/code&gt; Just Works and builds everything. Since the Riegl stuff is very tightly integrated, it made sense to be a workspace – less so for the InfraTec stuff. &lt;a href=&quot;#fnref:4&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:5&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;In particular, QT Modeler does not support extra bytes AFAICT. &lt;a href=&quot;#fnref:5&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name></name></author><category term="infratec" /><category term="riegl" /><category term="south-pole" /><category term="tls" /><summary type="html">We’ve worked with Riegl and InfraTec to integrate an InfraTec VarioCAM HD with Riegl TLS scanners. To date, this integration is not complete; we can take pictures with an InfraTec camera on top of a Riegl scanner, and we have developed a calibration for the camera and the mounting, but full software integration is still in the future. Even with incomplete integration, we brought a Riegl scanner and a InfraTec camera to the South Pole in January of 2017 to perform a three-dimensional survey of infrastructure with integrated thermal information.</summary></entry><entry><title type="html">atlas.lidar.io</title><link href="http://www.gadom.ski/2017/09/12/atlas-lidar-io.html" rel="alternate" type="text/html" title="atlas.lidar.io" /><published>2017-09-12T00:00:00-06:00</published><updated>2017-09-12T00:00:00-06:00</updated><id>http://www.gadom.ski/2017/09/12/atlas-lidar-io</id><content type="html" xml:base="http://www.gadom.ski/2017/09/12/atlas-lidar-io.html">&lt;p&gt;We have a remote &lt;a href=&quot;https://en.wikipedia.org/wiki/Lidar&quot;&gt;LiDAR&lt;/a&gt; system at the &lt;a href=&quot;https://en.wikipedia.org/wiki/Helheim_Glacier&quot;&gt;Helheim Glacier&lt;/a&gt; in southeast Greenland.
+This system, called ATLAS, was installed in the summer of 2015 to capture 3D scans of the glacier at regular intervals.
+These 3D scans can then be used to extract glacier velocities using, among other technologies, &lt;a href=&quot;/2017/01/20/cpd-v0-5-0.html&quot;&gt;cpd&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;http://glacio.gadom.ski/cameras/ATLAS_CAM/images/latest/redirect&quot; alt=&quot;The latest image from ATLAS_CAM, looking at the ATLAS system&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;The latest image from ATLAS_CAM, a remote camera looking at the ATLAS LiDAR system.&lt;/p&gt;
+
+&lt;p&gt;In addition to the 3D LiDAR data, the ATLAS system produces a slew of other information, including data on battery charge status, temperature inside the scanner and inside of the scanner mount, and more.
+The engineers who built and maintain the system (us) need to keep an eye on these values, so we can see what’s happening with the system and find out quickly if something is going wrong (not that there’s much we can do about it — the system is more-or-less autonomous).
+This information is also of interest to other stakeholders in the project, including the non-profit Heising-Simons Foundation who funds the work, and our scientific partners.&lt;/p&gt;
+
+&lt;p&gt;I’ve created &lt;a href=&quot;http://atlas.lidar.io&quot;&gt;http://atlas.lidar.io&lt;/a&gt; to serve this information.
+The rest of this post walks through the component parts of the atlas.lidar.io system.&lt;/p&gt;
+
+&lt;h2 id=&quot;data-path&quot;&gt;Data path&lt;/h2&gt;
+
+&lt;p&gt;The ATLAS system is constantly logging information such as LiDAR scanner status, temperatures, power system status, and more.
+These data are compiled into hourly digest messages called “heartbeats”.
+Heartbeats are transmitted via &lt;a href=&quot;https://en.wikipedia.org/wiki/Iridium_satellite_constellation&quot;&gt;Iridium&lt;/a&gt; &lt;a href=&quot;https://www.iridium.com/services/details/iridium-sbd&quot;&gt;Short-Burst Data (SBD)&lt;/a&gt; messages and received by a server process, &lt;a href=&quot;https://github.com/gadomski/sbd-rs&quot;&gt;sbd-rs&lt;/a&gt;, running on our lidar.io box located at CRREL.
+The lidar.io box also receives remote camera images from multiple remote cameras via FTP.&lt;/p&gt;
+
+&lt;h3 id=&quot;sbd-rs&quot;&gt;sbd-rs&lt;/h3&gt;
+
+&lt;p&gt;&lt;strong&gt;sbd-rs&lt;/strong&gt; is the first of several server-side components that drive our atlas.lidar.io website.
+It is a http server written in &lt;a href=&quot;https://www.rust-lang.org/en-US/&quot;&gt;Rust&lt;/a&gt;.
+The server listens for incoming SBD messages, receives and parses these messages, and then stores the messages on the filesystem.
+The &lt;strong&gt;sbd-rs&lt;/strong&gt; crate includes both a binary executable, for running the server, and a Rust library to provide an API for retrieving SBD messages from Rust code.&lt;/p&gt;
+
+&lt;p&gt;Many of the server-side components of the atlas.lidar.io system are written in Rust.
+I choose Rust because:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;I love programming in it.&lt;/li&gt;
+  &lt;li&gt;It is strongly typed and has first-class documentation tests, making it very easy to write robust code that isn’t terrible to revisit six months or two years later.&lt;/li&gt;
+  &lt;li&gt;Because of its memory-safety guarantees, servers I write in Rust are &lt;em&gt;stable&lt;/em&gt;. I’ve had zero production-time issues (knock on wood) with the &lt;strong&gt;sbd-rs&lt;/strong&gt; server — it Just Works™.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;A downside of Rust is that it isn’t widely used or read by other programmers, so components I write in Rust are usually my responsibility alone.
+As we’ll see, that’s led to some design decisions to &lt;em&gt;not&lt;/em&gt; use Rust for components I want other people to be able to work on.&lt;/p&gt;
+
+&lt;h3 id=&quot;glacio&quot;&gt;glacio&lt;/h3&gt;
+
+&lt;p&gt;Once the heartbeat messages have been stored on the filesystem as SBD messages, they need to be read and reconstructed into their heartbeat content.
+This work is done by the &lt;a href=&quot;https://github.com/CRREL/glacio&quot;&gt;glacio&lt;/a&gt; Rust library.&lt;/p&gt;
+
+&lt;p&gt;Rust’s packaging system, Cargo, permits &lt;a href=&quot;https://doc.rust-lang.org/book/second-edition/ch14-03-cargo-workspaces.html&quot;&gt;workspaces&lt;/a&gt;, which group multiple &lt;a href=&quot;https://crates.io/&quot;&gt;crates&lt;/a&gt;.
+The &lt;strong&gt;glacio&lt;/strong&gt; workspace has three crates:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;glacio&lt;/strong&gt;, the Rust library for reading heartbeats and remote camera images.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;glacio-http&lt;/strong&gt;, an Iron HTTP library for serving ATLAS and other remote station data via a JSON HTTP API.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;glacio-bin&lt;/strong&gt;, a binary executable for querying serverside and starting the JSON HTTP API.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This separation makes it easier to enforce clean code boundaries, ensuring that, e.g., I don’t pollute the Rust API with HTTP-specific functionality.&lt;/p&gt;
+
+&lt;p&gt;The &lt;strong&gt;glacio&lt;/strong&gt; library uses the &lt;strong&gt;sbd-rs&lt;/strong&gt; library to read the SBD messages from the filesystem and re-construct the heartbeat messages.
+Because SBD messages are byte-limited, a heartbeat message may or may not be broken up into multiple SBD transmissions.
+The &lt;strong&gt;glacio-http&lt;/strong&gt; library uses the &lt;strong&gt;glacio&lt;/strong&gt; Rust API to build JSON-serializable structures and return those structures to HTTP requests using an Iron server.
+Finally, the &lt;strong&gt;glacio-bin&lt;/strong&gt; binary reads in a configuration file, builds the appropriately-configured HTTP server, and starts that server on lidar.io.&lt;/p&gt;
+
+&lt;p&gt;The data are now available to the world, but this HTTP API does &lt;em&gt;no&lt;/em&gt; actual web presentation work.
+I’ve separated out the web content into a non-Rust project of its own, so that other developers, who might not know Rust, can work on the front-end.
+The HTTP API can be used by multiple applications; in fact, the ATLAS_CAM picture at the top of this page is provided by the HTTP API, via the url &lt;a href=&quot;http://api.glac.io/cameras/ATLAS_CAM/images/latest/redirect&quot;&gt;http://api.glac.io/cameras/ATLAS_CAM/images/latest/redirect&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;data-presentation&quot;&gt;Data presentation&lt;/h2&gt;
+
+&lt;p&gt;Data presentation is handled by an &lt;a href=&quot;https://angular.io/&quot;&gt;Angular&lt;/a&gt; frontend, &lt;a href=&quot;https://github.com/CRREL/atlas.lidar.io&quot;&gt;atlas.lidar.io&lt;/a&gt;.
+I wanted a JavaScript web framework front end because they are made to work with external JSON APIs, and I wanted to enforce separation between my data crunching (&lt;strong&gt;glacio&lt;/strong&gt;) and data presentation.
+I researched and demoed a couple of options, and I ended up with Angular because (a) its demo was clean and (b) it has first-class routing.
+Since I’m not building a web app, but instead emulating a traditional static web page, I needed routing to be easy, and Angular provided that.&lt;/p&gt;
+
+&lt;p&gt;I used &lt;a href=&quot;https://getbootstrap.com/&quot;&gt;Bootstrap&lt;/a&gt; (of course) for styles, and &lt;a href=&quot;https://d3js.org/&quot;&gt;d3&lt;/a&gt; for graphing.
+Angular compiles to a couple of static files when deploying, so it can be served directly by Apache, which reduces the number of moving parts/running processes on the lidar.io box.
+The documentation for Angular isn’t roadmapped out very well, so figuring out the right way to deploy took a bit of figuring, but once I found the correct instructions things turned out to be &lt;em&gt;very&lt;/em&gt; easy.&lt;/p&gt;
+
+&lt;h2 id=&quot;deployment&quot;&gt;Deployment&lt;/h2&gt;
+
+&lt;p&gt;To update both the &lt;strong&gt;glacio&lt;/strong&gt; API and the &lt;strong&gt;atlas.lidar.io&lt;/strong&gt; website, I use basic &lt;a href=&quot;http://www.fabfile.org/&quot;&gt;fabric&lt;/a&gt; recipes.
+Deploying is as simple as:&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;fab deploy
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This makes it easy to do quick, incremental iterations of the website and JSON API.&lt;/p&gt;
+
+&lt;h3 id=&quot;development-versions&quot;&gt;Development versions&lt;/h3&gt;
+
+&lt;p&gt;Right now I develop new versions of the atlas.lidar.io website against a &lt;strong&gt;glacio&lt;/strong&gt; server running locally on my laptop.
+I copy down all the necessary source data from lidar.io, and use a me-specific configuration file to serve the glacio data.
+This works for my small-scale, local development, but I will eventually need to have a development API available for testing development frontends.&lt;/p&gt;
+
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h2&gt;
+
+&lt;p&gt;Rust JSON API backend + Angular web frontend is a pretty swell combination that allows maximum flexibility and power for processing on the backend and good separability and performance on the frontend.
+With responsive styling from Bootstrap, this was a really easy way to stand up a mobile-and-desktop enabled website with custom data presentation quickly.&lt;/p&gt;</content><author><name></name></author><category term="atlas" /><category term="rust" /><category term="angular" /><category term="fabric" /><category term="bootstrap" /><category term="d3" /><summary type="html">We have a remote LiDAR system at the Helheim Glacier in southeast Greenland. This system, called ATLAS, was installed in the summer of 2015 to capture 3D scans of the glacier at regular intervals. These 3D scans can then be used to extract glacier velocities using, among other technologies, cpd.</summary></entry><entry><title type="html">Vertical datum conversions with PDAL</title><link href="http://www.gadom.ski/2017/05/31/vdatum-with-pdal.html" rel="alternate" type="text/html" title="Vertical datum conversions with PDAL" /><published>2017-05-31T00:00:00-06:00</published><updated>2017-05-31T00:00:00-06:00</updated><id>http://www.gadom.ski/2017/05/31/vdatum-with-pdal</id><content type="html" xml:base="http://www.gadom.ski/2017/05/31/vdatum-with-pdal.html">&lt;p&gt;In order to match collected point cloud data to existing records, it is often necessary to convert the data from one coordinate system to another.
+Some types of conversions, e.g. basic reprojections, can be completely described by mathematical functions, making them relatively straightforward.
+Converting between vertical datums, however, can be more challenging.&lt;/p&gt;
+
+&lt;p&gt;For a good introduction to vertical datums, &lt;a href=&quot;https://vdatum.noaa.gov/docs/datums.html&quot;&gt;NOAA has a quality tutorial&lt;/a&gt;.
+In this exercise, we are going to convert the vertical coordinates of a point cloud from a three-dimensional reference system, NAD 83 (1986), to a vertical datum, the North American Vertical Datum 1988 (NAVD 88).
+NAVD 88 is based on the Earth’s gravity field, which varies in space (and in time) based upon rock density, crustal thickness, and a variety of other factors.
+Earth’s gravity field can be expressed through a geoid, which is a (from the NOAA tutorial):&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;equipotential surface, defined in the Earth’s gravity field, which best fits, in a least squares sense, global mean sea level (MSL)&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;In order to use &lt;a href=&quot;https://www.pdal.io/&quot;&gt;PDAL&lt;/a&gt; to convert vertical coordinates to a new vertical datum, we’ll need to fetch the appropriate geoid.
+PDAL uses &lt;a href=&quot;http://proj4.org/&quot;&gt;proj.4&lt;/a&gt; under the hood, and proj.4 accepts geoid’s in NOAA VDatum’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;gtx&lt;/code&gt; file format.
+We can fetch the 12B geoid from the &lt;a href=&quot;https://vdatum.noaa.gov/download.php&quot;&gt;VDatum download website&lt;/a&gt;.
+Inside the 12B zipfile there is a file called &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;g2012b_conus.gtx&lt;/code&gt;; this is the geoid for the Continental United States (CONUS).
+We’ll use this file to convert our data.&lt;/p&gt;
+
+&lt;p&gt;For this example, we’ll convert data in NAD83 / UTM 18N, which has an &lt;a href=&quot;http://www.epsg.org/&quot;&gt;EPSG code&lt;/a&gt; of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;EPSG:26918&lt;/code&gt; using the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pdal translate&lt;/code&gt; subcommand.&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;pdal translate &lt;span class=&quot;nt&quot;&gt;-i&lt;/span&gt; infile.las &lt;span class=&quot;nt&quot;&gt;-o&lt;/span&gt; outfile.las &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;-f&lt;/span&gt; reprojection &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;--filters&lt;/span&gt;.reprojection.out_srs&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;+init=EPSG:26918 +geoidgrids=/path/to/vdatum/g2012b_conus.gtx&quot;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;--writers&lt;/span&gt;.las.a_srs&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;EPSG:26918+5703
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;By providing the geoid path, PDAL will use proj.4 to convert each point to the NAVD88 vertical datum.
+The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;--writers.las.a_srs=EPSG:26918+5703&lt;/code&gt; option sets the spatial reference system of the output file to the compound EPSG code &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;EPSG:26918+5703&lt;/code&gt;.
+&lt;a href=&quot;http://spatialreference.org/ref/epsg/north-american-vertical-datum-of-1988-height/&quot;&gt;EPSG:5703&lt;/a&gt; is NAVD88.&lt;/p&gt;</content><author><name></name></author><category term="pdal" /><category term="vertical-datum" /><summary type="html">In order to match collected point cloud data to existing records, it is often necessary to convert the data from one coordinate system to another. Some types of conversions, e.g. basic reprojections, can be completely described by mathematical functions, making them relatively straightforward. Converting between vertical datums, however, can be more challenging.</summary></entry><entry><title type="html">PDAL on Windows</title><link href="http://www.gadom.ski/2017/04/21/pdal-on-windows.html" rel="alternate" type="text/html" title="PDAL on Windows" /><published>2017-04-21T00:00:00-06:00</published><updated>2017-04-21T00:00:00-06:00</updated><id>http://www.gadom.ski/2017/04/21/pdal-on-windows</id><content type="html" xml:base="http://www.gadom.ski/2017/04/21/pdal-on-windows.html">&lt;p&gt;As much as I try to use free and open-source software for work, there are times when you have to bite the bullet and use Their Software.
+Right now my proprietary stack is:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;http://www.riegl.com/index.php?id=221&quot;&gt;RiSCAN Pro&lt;/a&gt; for registering and exporting Riegl LiDAR data.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://appliedimagery.com/&quot;&gt;QT Modeler&lt;/a&gt; for visualization and analysis of point clouds.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;http://www.trimble.com/survey/trimble-business-center.aspx&quot;&gt;Trimble Business Center&lt;/a&gt; for GNSS post-processing.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;While I’m working on replacing each component with a FOSS stack, we’re not there yet.
+All three softwares are Windows-only, so I just got a Windows processing box for work.
+While I’m mostly going to be working in these proprietary GUIs on the ‘doze box, I figure this is a good chance to up my personal Windows hacking chops and maybe sand off some Windows-specific edges for some software projects that I work on.&lt;/p&gt;
+
+&lt;p&gt;A good first step is &lt;a href=&quot;https://www.pdal.io/&quot;&gt;PDAL&lt;/a&gt;.
+It’s widely used, its developer base is mostly &lt;em&gt;not&lt;/em&gt; Windows, but it is expected to be Windows-friendly.
+I also have a colleague who wants to develop his own Windows software that uses PDAL, and so I figured I’d try it myself and report back.&lt;/p&gt;
+
+&lt;p&gt;So let’s get PDAL set up on a tabula rasa Windows box and build a small downstream dependency project.&lt;/p&gt;
+
+&lt;h2 id=&quot;development-dependencies&quot;&gt;Development dependencies&lt;/h2&gt;
+
+&lt;p&gt;I’m working on Windows 10 Enterprise with a 64-bit processor.
+To get this party started, we need the following software:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.visualstudio.com/free-developer-offers/&quot;&gt;Visual Studio Community&lt;/a&gt; is a free version of Visual Studio.
+I’m working with the 2017 version.
+You’ll need to install C++ and Github integration.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://cmake.org/&quot;&gt;CMake&lt;/a&gt;.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://trac.osgeo.org/osgeo4w/&quot;&gt;OSGeo4W&lt;/a&gt; is open-source geospatial packages.
+The OSGeo installer includes many of the development dependencies for PDAL, so we’ll use it instead of building these dependencies yourself.
+You’ll need the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;gdal-dev&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;libgeotiff&lt;/code&gt;, and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;proj&lt;/code&gt; libraries from the 64-bit version of OSGeo.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;You’ll need to update your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;PATH&lt;/code&gt; to include the following (assuming you’ve installed OSGeo to the default path):&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\OSGeo4W64\lib&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\OSGeo4W64\bin&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\Users\&amp;lt;youruser&amp;gt;\local\lib&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\Users\&amp;lt;youruser&amp;gt;\local\bin&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;If you plan on installing PDAL to a location other than &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\Users\&amp;lt;youruser&amp;gt;\local&lt;/code&gt;, update those paths accordingly.
+The default CMake install location, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\Program Files\PDAL&lt;/code&gt;, requires admin permissions to write, so it’s often a good idea to pick a different install spot.
+Also add the environment variable &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GDAL_DATA&lt;/code&gt; and set its value to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:\OSGeo4W64\share\epsg_csv&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;get-pdal&quot;&gt;Get PDAL&lt;/h2&gt;
+
+&lt;p&gt;Open up Visual Studio, find the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Team Explorer&lt;/code&gt; tab, and clone a new GitHub repo: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;https://github.com/PDAL/PDAL&lt;/code&gt;.
+If you accept the defaults, the code will be downloaded to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Source\Repos\PDAL&lt;/code&gt; in your home directory.&lt;/p&gt;
+
+&lt;h2 id=&quot;create-a-visual-studio-solution-with-cmake&quot;&gt;Create a Visual Studio solution with CMake&lt;/h2&gt;
+
+&lt;p&gt;Open CMake, and choose &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Source/Repos/PDAL&lt;/code&gt; as your source code directory and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Source/Repos/PDAL/build&lt;/code&gt; as your build directory.
+Yes, I meant to type &lt;s&gt;normal&lt;/s&gt; Unix slashes, the CMake GUI displays paths with Unix path separators.
+Click &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Configure&lt;/code&gt;.
+You’ll be asked to create the build directory, then you’ll be asked to specify the generator.
+Choose &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Visual Sudio 15 2017 Win64&lt;/code&gt; (notice the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Win64&lt;/code&gt;).
+Go on through, and make sure CMake configuration completes successfully.
+Set &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;CMAKE_INSTALL_PREFIX&lt;/code&gt; to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;C:/Users/&amp;lt;youruser&amp;gt;/local&lt;/code&gt; (or whatever value you picked when you set up your environment variables).
+Click &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Generate&lt;/code&gt; and you’ll have a solution in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Source/Repos/PDAL/build/&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;build-pdal-with-visual-studio&quot;&gt;Build PDAL with Visual Studio&lt;/h2&gt;
+
+&lt;p&gt;Open or go back to Visual Studio and open &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Source\Repos\PDAL\build\PDAL.sln&lt;/code&gt;.
+Switch to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Solution Explorer&lt;/code&gt;, then build the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ALL_BUILD&lt;/code&gt; target.
+If that completes successfully, build the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;INSTALL&lt;/code&gt; target.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Note: I usually like to run tests before I install, but the PDAL test suite is broken in Visual Studio at the moment.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;create-and-build-a-downstream-project&quot;&gt;Create and build a downstream project&lt;/h2&gt;
+
+&lt;p&gt;A “downstream” is a project that depends on, in this case, PDAL.
+I’ve created a project &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pdal-downstream&lt;/code&gt; and added the following two files:&lt;/p&gt;
+
+&lt;script src=&quot;https://gist.github.com/a4c5f04a37231fb20355d890768b4eaa.js&quot;&gt; &lt;/script&gt;
+
+&lt;p&gt;Following the same procedure as we did for PDAL, configure this project with CMake and build it in Visual Studio.
+That should create a file &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pdal-downstream\build\Debug\pdal-downstream.exe&lt;/code&gt; that you can run to report the installed PDAL version.&lt;/p&gt;
+
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h2&gt;
+
+&lt;p&gt;And that’s it!
+As you can see, most of the hard work is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;PATH&lt;/code&gt; configuration and getting the correct software onto your system.&lt;/p&gt;</content><author><name></name></author><category term="pdal" /><category term="windows" /><summary type="html">As much as I try to use free and open-source software for work, there are times when you have to bite the bullet and use Their Software. Right now my proprietary stack is:</summary></entry></feed>

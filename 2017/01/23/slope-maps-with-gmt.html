@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Slope maps with GMT | @gadomski</title>
+<meta name="generator" content="Jekyll v3.9.0" />
+<meta property="og:title" content="Slope maps with GMT" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="About two-thirds of dry slab avalanches occur on slopes between 30° and 45° (McClung &amp; Schaerer, 2006). A map of slope angles is therefore a useful tool for safe decision making when backcountry skiing." />
+<meta property="og:description" content="About two-thirds of dry slab avalanches occur on slopes between 30° and 45° (McClung &amp; Schaerer, 2006). A map of slope angles is therefore a useful tool for safe decision making when backcountry skiing." />
+<link rel="canonical" href="http://www.gadom.ski/2017/01/23/slope-maps-with-gmt.html" />
+<meta property="og:url" content="http://www.gadom.ski/2017/01/23/slope-maps-with-gmt.html" />
+<meta property="og:site_name" content="@gadomski" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2017-01-23T00:00:00-07:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Slope maps with GMT" />
+<script type="application/ld+json">
+{"@type":"BlogPosting","headline":"Slope maps with GMT","dateModified":"2017-01-23T00:00:00-07:00","datePublished":"2017-01-23T00:00:00-07:00","mainEntityOfPage":{"@type":"WebPage","@id":"http://www.gadom.ski/2017/01/23/slope-maps-with-gmt.html"},"description":"About two-thirds of dry slab avalanches occur on slopes between 30° and 45° (McClung &amp; Schaerer, 2006). A map of slope angles is therefore a useful tool for safe decision making when backcountry skiing.","url":"http://www.gadom.ski/2017/01/23/slope-maps-with-gmt.html","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://www.gadom.ski/feed.xml" title="@gadomski" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">@gadomski</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/publications/">Publications</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Slope maps with GMT</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2017-01-23T00:00:00-07:00" itemprop="datePublished">Jan 23, 2017
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>About two-thirds of dry slab avalanches occur on slopes between 30° and 45° <a class="citation" href="#McClung2006">(McClung &amp; Schaerer, 2006)</a>.
+A map of slope angles is therefore a useful tool for safe decision making when backcountry skiing.</p>
+
+<p>The excellent <a href="https://caltopo.com/">CalTopo</a> provides a suite of map building tools, including a slope angle shading map.
+But me being me, I want to make my own maps.</p>
+
+<p>This walkthrough describes how to make a slope angle shading map using free and open data and <a href="http://gmt.soest.hawaii.edu/">Generic Mapping Tools (GMT)</a>.
+You’ll need the following softwares to follow along:</p>
+
+<ul>
+  <li>GMT</li>
+  <li><a href="http://www.gdal.org/">GDAL/OGR</a></li>
+</ul>
+
+<p>The Makefile used in this example, along with a download script to fetch the map data, are in a gist at the <a href="#conclusion">bottom of this post</a>.</p>
+
+<h2 id="the-goal">The goal</h2>
+
+<p><a href="https://en.wikipedia.org/wiki/Hidden_Valley_(Ski_Estes_Park)">Hidden Valley</a> is a abandoned ski area in Rocky Mountain National Park that closed in 1991.
+It now is a popular winter destination for backcountry skiing and sledding.
+We want to color-code dangerous slope angles while providing enough additional context to make a useful map.</p>
+
+<p><img src="/img/hidden-valley-slope-angle.png" alt="Hidden Valley" /></p>
+
+<h2 id="getting-the-data">Getting the data</h2>
+
+<p>We’ll use data from the <a href="https://nationalmap.gov/elevation.html">USGS 3D Elevation Program</a> to produce our slope, hillshade, and contour grids.
+Our stream and lake overlays will come from the <a href="https://nhd.usgs.gov/">National Hydrography Dataset</a>, and the roads from the <a href="https://catalog.data.gov/dataset/usgs-national-transportation-dataset-ntd-downloadable-data-collectionde7d2">National Transporation Dataset</a>.
+All these products are browsable and downloadable through <a href="https://viewer.nationalmap.gov/basic/">The National Map</a>, but here’s direct links to the datasets required for this exercise:</p>
+
+<ul>
+  <li><a href="https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/GridFloat/USGS_NED_13_n40w106_GridFloat.zip">n40w106</a> DEM as GridFloat</li>
+  <li><a href="https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/GridFloat/USGS_NED_13_n41w106_GridFloat.zip">n41w106</a> DEM as GridFloat</li>
+  <li><a href="https://prd-tnm.s3.amazonaws.com/StagedProducts/Hydrography/NHD/HU8/HighResolution/Shape/NHD_H_10190005_Shape.zip">Subbasin 10190005</a> as a shapefile</li>
+  <li><a href="https://prd-tnm.s3.amazonaws.com/StagedProducts/Tran/Shape/TRAN_8_Colorado_GU_STATEORTERRITORY.zip">Colorado roads</a> as a shapefile</li>
+</ul>
+
+<p>All told, it’s about 4.6G of data, organized like this on my system:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ tree -P '*.shp|*.flt'
+.
+├── dem
+│   ├── n40w106
+│   │   └── n40w106.shp
+│   ├── n41w106
+│   │   └── n41w106.shp
+│   ├── usgs_ned_13_n40w106_gridfloat.flt
+│   └── usgs_ned_13_n41w106_gridfloat.flt
+├── roads
+│   └── Shape
+│       ├── Trans_AirportPoint.shp
+│       ├── Trans_AirportRunway.shp
+│       ├── Trans_RailFeature.shp
+│       ├── Trans_RoadSegment.shp
+│       ├── Trans_RoadSegment2.shp
+│       ├── Trans_RoadSegment3.shp
+│       └── Trans_TrailSegment.shp
+└── water
+    └── Shape
+        ├── NHDArea.shp
+        ├── NHDFlowline.shp
+        ├── NHDLine.shp
+        ├── NHDPoint.shp
+        ├── NHDPointEventFC.shp
+        ├── NHDWaterbody.shp
+        ├── WBDHU10.shp
+        ├── WBDHU12.shp
+        ├── WBDHU2.shp
+        ├── WBDHU4.shp
+        ├── WBDHU8.shp
+        └── WBDLine.shp
+
+7 directories, 23 files
+</code></pre></div></div>
+
+<h2 id="creating-a-simple-raster-map-with-gmt">Creating a simple raster map with GMT</h2>
+
+<p>To prove that our system is working, let’s create a rainbow elevation map from our DEM data in our area of interest.
+We’ll use a Makefile and place our generated products in <code class="language-plaintext highlighter-rouge">build/</code>.</p>
+
+<p>First, we define our area of interest and create a rule for our build directory:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>XMIN:=-105.70
+XMAX:=-105.62
+YMIN:=40.37
+YMAX:=40.41
+
+build:
+	mkdir $@
+</code></pre></div></div>
+
+<p>Next, we subset our DEM data to our area of interest using a VRT.
+For some reason GMT (on my system) isn’t happy reading VRTs, even though it should be able to use any GDAL-y data source, so we use the VRT to create a GeoTIFF:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>build/dem.vrt: Makefile | build
+	gdalbuildvrt -te $(XMIN) $(YMIN) $(XMAX) $(YMAX) $@ $(wildcard dem/*.flt)
+
+build/dem.tif: build/dem.vrt
+	gdal_translate $&lt; $@
+</code></pre></div></div>
+
+<p>Finally, we create our simple rainbow elevation map.
+I do this in two steps — first I create the PostScript file, then I use <code class="language-plaintext highlighter-rouge">psconvert</code> to turn it into a png:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>build/hidden-valley.ps: build/dem.tif Makefile | build
+	grdimage $&lt; &gt; $@
+
+%.png: %.ps
+	psconvert -TG -A -P $&lt;
+</code></pre></div></div>
+
+<p>A few things to note:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">grdimage</code> takes <em>many</em> more options, but for now we’re keeping it simple.</li>
+  <li>The <code class="language-plaintext highlighter-rouge">psconvert</code> command converts the PostScript file into a png with transparency (<code class="language-plaintext highlighter-rouge">-TG</code>), cropped (<code class="language-plaintext highlighter-rouge">-A</code>), and rotated into portrait mode (<code class="language-plaintext highlighter-rouge">-P</code>).</li>
+</ol>
+
+<p>We make our map by running <code class="language-plaintext highlighter-rouge">make build/hidden-valley.png</code>:</p>
+
+<p><img src="/img/hidden-valley-rainbow.png" alt="Rainbow elevation map of Hidden Valley" /></p>
+
+<h2 id="creating-more-derivative-products">Creating more derivative products</h2>
+
+<p>We’ve already created one derivative product, our cropped DEM <code class="language-plaintext highlighter-rouge">build/dem.tif</code>.
+Let’s create the rest of the products we need to make our map.
+I’ll step through the rules one-by-one and talk through what they’re doing.</p>
+
+<h3 id="calculate-the-slope">Calculate the slope</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>build/slope.nc: build/dem.tif
+	grdgradient -fg $&lt; -S$@ -D
+	grdmath $@ ATAN PI DIV 180 MUL = $@
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">grdgradient</code> does derivative math on gridded data.
+In this case, we use the combination of the <code class="language-plaintext highlighter-rouge">-D</code> and <code class="language-plaintext highlighter-rouge">-S</code> options to write the magnitude of the gradient vector to a file, <code class="language-plaintext highlighter-rouge">build/slope.nc</code>.
+We also need to specify <code class="language-plaintext highlighter-rouge">-fg</code> because our data is a geographic (lat/lon) grid and we need to convert those latitudes and longitudes to meters before calculating the gradient.
+Once we’ve calculated the raw gradient magnitude, we convert that scalar value to an angle, in degrees, using <code class="language-plaintext highlighter-rouge">grdmath</code>.</p>
+
+<h3 id="create-a-hillshade">Create a hillshade</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>build/gradient.nc: build/dem.tif
+	grdgradient -fg $&lt; -G$@ -A-45 -Nt0.6
+</code></pre></div></div>
+
+<p>In this case, we use <code class="language-plaintext highlighter-rouge">grdgradient</code> to create a hillshade.
+We use <code class="language-plaintext highlighter-rouge">-N</code> to control the intensity of the hillshade — since we’ll be drawing contours and additional overlays, we dial down the intensity to <code class="language-plaintext highlighter-rouge">0.6</code> so the map is a bit less noisy.</p>
+
+<h3 id="crop-and-convert-the-vector-data">Crop and convert the vector data</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>OGR2GMT:=ogr2ogr -f GMT -spat $(XMIN) $(YMIN) $(XMAX) $(YMAX) -clipsrc spat_extent
+
+build/flowline.gmt: water/Shape/NHDFlowline.shp
+	$(OGR2GMT) $@ $&lt; 
+
+build/waterbody.gmt: water/Shape/NHDWaterbody.shp
+	$(OGR2GMT) $@ $&lt; 
+
+build/roads.shp: $(wildcard roads/Shape/Trans_RoadSegment*.shp)
+	ogr2ogr -f 'ESRI Shapefile' -spat $(XMIN) $(YMIN) $(XMAX) $(YMAX) -clipsrc spat_extent $@ $(word 1,$^)
+	ogr2ogr -f 'ESRI Shapefile' -spat $(XMIN) $(YMIN) $(XMAX) $(YMAX) -clipsrc spat_extent -addfields $@ $(word 2,$^)
+	ogr2ogr -f 'ESRI Shapefile' -spat $(XMIN) $(YMIN) $(XMAX) $(YMAX) -clipsrc spat_extent -addfields $@ $(word 3,$^)
+
+build/roads.gmt: build/roads.shp
+	ogr2ogr -f GMT $@ $&lt;
+</code></pre></div></div>
+
+<p>Creating flowline (streams) and waterbody (lakes, etc) vectors is a simple matter of cropping the source data with <code class="language-plaintext highlighter-rouge">ogr2ogr</code> and writing it out in the GMT format.
+Creating the roads file is a bit more tricky, since the road data comes in three seperate shapefiles.
+I wasn’t able to figure out how to <code class="language-plaintext highlighter-rouge">-addfields</code> to a GMT vector file, so I create an intermediate <code class="language-plaintext highlighter-rouge">build/roads.shp</code>, then convert that file to gmt.</p>
+
+<h3 id="create-a-color-palette">Create a color palette</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>build/slope.cpt: Makefile
+	makecpt -Cwhite,'#ffff33','#ff7f00','#e41a1c','#984ea3','#377eb8','#777777' -T0,25,30,35,40,45,50,90 -N &gt; $@
+</code></pre></div></div>
+
+<p>This rule creates a color palette that we’ll use for our slopes.</p>
+
+<h2 id="putting-it-all-together">Putting it all together</h2>
+
+<p>Now that we’ve created all of the intermediate products, let’s rewrite our PostScript rule to create our final map.
+I’ll step through the rule components one-by-one, with an explanation immediately after.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>build/hidden-valley.ps: build/dem.tif build/slope.nc build/gradient.nc build/flowline.gmt build/waterbody.gmt build/roads.gmt build/slope.cpt Makefile
+</code></pre></div></div>
+
+<p>Add all of our derivative products to ensure they get built.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	grdimage build/slope.nc -Cbuild/slope.cpt -Ibuild/gradient.nc -Ba -B+t"Hidden Valley" -JM8i -Rbuild/slope.nc -K &gt; $@
+</code></pre></div></div>
+
+<p>Draw the slope grid, colored with our custom palette.
+The <code class="language-plaintext highlighter-rouge">-JM8i</code> specifies the projection for these data, in this case a Mercator projection that is 8 inches wide.
+The <code class="language-plaintext highlighter-rouge">-R</code> instructs <code class="language-plaintext highlighter-rouge">grdimage</code> to use the bounds of the <code class="language-plaintext highlighter-rouge">build/slope.nc</code> grid as the bounds of the plot.
+The <code class="language-plaintext highlighter-rouge">-I</code> option adds the hillshade, the <code class="language-plaintext highlighter-rouge">-Ba</code> adds a border, the <code class="language-plaintext highlighter-rouge">-B+t</code> titles the plot.
+The <code class="language-plaintext highlighter-rouge">-K</code> option “keeps the output file open” so we can add more layers.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	grdcontour build/dem.tif -C20 -A100 -J -R -K -O &gt;&gt; $@
+</code></pre></div></div>
+
+<p>Add contours spaced 20 meters apart, labelled every 100 meters.
+The <code class="language-plaintext highlighter-rouge">-J</code> and <code class="language-plaintext highlighter-rouge">-R</code> options inherit the values used in the previous command, so we don’t need to specify them again.
+The <code class="language-plaintext highlighter-rouge">-O</code> option instructs <code class="language-plaintext highlighter-rouge">grdcontour</code> to output “overlay” PostScript that is meant to be appended onto PostScript data “kept open” with <code class="language-plaintext highlighter-rouge">-K</code>.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	psxy build/flowline.gmt -W0.6p,'#377eb8' -J -R -K -O &gt;&gt; $@
+	psxy build/waterbody.gmt -G'#377eb8' -J -R -K -O &gt;&gt; $@
+	psxy build/roads.gmt -W1p,'#f781bf' -J -R -K -O &gt;&gt; $@
+</code></pre></div></div>
+
+<p>Add the vector data.
+The <code class="language-plaintext highlighter-rouge">-W</code> option specifies the pen used to draw lines, and the <code class="language-plaintext highlighter-rouge">-G</code> option specifies the fill.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	psbasemap -Lx5.2i/-0.7i+c$(YMIN)+w1k -J -R -K -O &gt;&gt; $@
+</code></pre></div></div>
+
+<p>Add the length scale, set to 1km.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>	psscale -D0i/-0.7i+w3i/0.2i+h -Cbuild/slope.cpt -G0/60 -By+l"Slope angle" -I -O &gt;&gt; $@
+</code></pre></div></div>
+
+<p>Add the color legend.</p>
+
+<p>Now you can run <code class="language-plaintext highlighter-rouge">make build/hidden-valley.png</code> and get your map!</p>
+
+<p><img src="/img/hidden-valley-slope-angle.png" alt="Hidden Valley" /></p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>By automating this map-generation, you can easily create maps for new areas.
+I’ve souped up this example into <a href="https://github.com/gadomski/slope-maps">this project</a>, which I can use to quickly create maps of new areas I’m exploring.</p>
+
+<p>Here’s the complete Makefile used for this example, along with a download script to grab the data you need:</p>
+
+<script src="https://gist.github.com/gadomski/f90e464114e5bbfecdda9e6b262f5adf.js"> </script>
+
+<h2 id="references">References</h2>
+
+<ol class="bibliography"><li><span id="McClung2006">McClung, D., &amp; Schaerer, P. (2006). <i>The Avalanche Handbook</i> (3rd ed.). The Mountaineers Books.</span></li></ol>
+
+  </div><a class="u-url" href="/2017/01/23/slope-maps-with-gmt.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">@gadomski</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">@gadomski</li><li><a class="u-email" href="mailto:pete@gadom.ski">pete@gadom.ski</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/gadomski"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">gadomski</span></a></li><li><a href="https://www.twitter.com/petegadomski"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg> <span class="username">petegadomski</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>dogs and charts, mostly
+</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

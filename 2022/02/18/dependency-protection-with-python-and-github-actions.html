@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Dependency protection with Python and Github actions | @gadomski</title>
+<meta name="generator" content="Jekyll v3.9.0" />
+<meta property="og:title" content="Dependency protection with Python and Github actions" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Many thanks to Tom Augsburger for inspiring this post with this issue and providing additional background on the problem space." />
+<meta property="og:description" content="Many thanks to Tom Augsburger for inspiring this post with this issue and providing additional background on the problem space." />
+<link rel="canonical" href="http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions.html" />
+<meta property="og:url" content="http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions.html" />
+<meta property="og:site_name" content="@gadomski" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2022-02-18T00:00:00-07:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Dependency protection with Python and Github actions" />
+<script type="application/ld+json">
+{"@type":"BlogPosting","headline":"Dependency protection with Python and Github actions","dateModified":"2022-02-18T00:00:00-07:00","datePublished":"2022-02-18T00:00:00-07:00","mainEntityOfPage":{"@type":"WebPage","@id":"http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions.html"},"description":"Many thanks to Tom Augsburger for inspiring this post with this issue and providing additional background on the problem space.","url":"http://www.gadom.ski/2022/02/18/dependency-protection-with-python-and-github-actions.html","@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://www.gadom.ski/feed.xml" title="@gadomski" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">@gadomski</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/publications/">Publications</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Dependency protection with Python and Github actions</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2022-02-18T00:00:00-07:00" itemprop="datePublished">Feb 18, 2022
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <blockquote>
+  <p>Many thanks to Tom Augsburger for inspiring this post with <a href="https://github.com/stac-utils/stactools/issues/227">this issue</a> and providing additional background on the problem space.</p>
+</blockquote>
+
+<p>Dependency management is a notoriously hard problem, and it is significantly harder if you are working in an interpreted language that has unconstrained imports from all dependent projects, e.g. Python.
+There have been gallons of digital ink spilled discussing the pros and cons of various dependency management schemes and tools (e.g. <a href="https://python-poetry.org/">poetry</a>).
+This post does not aim to try to solve dependency management; instead, it outlines one approach to protect against dependency breakages using Github actions for your Python library.</p>
+
+<p>The “correct” approach to dependency management depends heavily on the scope of your software and its intended use.
+If you’re building an executable or executable-ish (e.g. a command line utility), it is unquestionably the best practice to lock your dependency tree with a Pipfile.lock, <code class="language-plaintext highlighter-rouge">pip freeze &gt; requirements.txt</code>, or something similar.
+The same almost certainty holds for API endpoints (e.g. Lambdas); these are often implicitly locked by executing from a (frozen) Docker image.
+The picture changes quickly if you’re building a library that is used by downstream projects, because if you freeze dependencies you almost certainly break downstream dependency resolution.
+So, if you’re building a library, you need a more flexible model.</p>
+
+<p><a href="https://iscinumpy.dev/post/bound-version-constraints/">This post</a> outlines a wonderful case for not using upper bound version constraints in Python, and is worth your time to read in full.
+To summarize, the article begins with SemVer skepticism and awareness of the complexities of large Python environments, and concludes that upper bounds will more often break your code unnecessarily rather than protecting you from API changes.
+It recommends two actions to protect against dependency breakage:</p>
+<ul>
+  <li>Provide lower bounds but not upper bounds</li>
+  <li>Test three (or four) cases in CI:
+    <ul>
+      <li>Standard: <code class="language-plaintext highlighter-rouge">pip install -U my-package</code></li>
+      <li>Minimum requirements: provide the minimum supported version for each dependency and test against that</li>
+      <li>Pre-release: identify key upstream packages and test against pre-release versions, e.g. installed with <code class="language-plaintext highlighter-rouge">pip install --pre</code></li>
+      <li>(optional) Extra requires: <code class="language-plaintext highlighter-rouge">pip install -U 'my-package[all]'</code>, where [all] installs all possibly cases of extra_requires</li>
+    </ul>
+  </li>
+</ul>
+
+<p>While straightforward in concept, executing this strategy on Github actions requires some workflow setup that can be a little fiddly. 
+These following examples are specific to Github actions, but the general concepts can be ported to other CI systems.</p>
+
+<h2 id="assumptions">Assumptions</h2>
+
+<p>There are a multitude of tools available for testing, dependency management, and more.
+We are not here to make tooling recommendations or evaluations, and so will stick to an almost-vanilla setup with default Python.
+The only exception is <a href="https://docs.pytest.org/en/7.0.x/">pytest</a>, which is useful enough (in my opinion) to warrant inclusion in this post.</p>
+
+<h2 id="define-dependencies">Define dependencies</h2>
+
+<p>The first step is defining your requirements in <code class="language-plaintext highlighter-rouge">setup.cfg</code> properly.</p>
+
+<blockquote>
+  <p>You’ll notice we use <code class="language-plaintext highlighter-rouge">setup.cfg</code> instead of <code class="language-plaintext highlighter-rouge">setup.py</code>. <code class="language-plaintext highlighter-rouge">setup.cfg</code> is a modern addition to Python, and in my opinion should be preferred whenever possible.
+Configuration should be static and simply defined, and not require Python code to create.</p>
+</blockquote>
+
+<p>Define your dependencies with lower bounds only, e.g.:</p>
+
+<pre><code class="language-cfg">[options]
+install_requires =
+    foo &gt;= 1.2
+</code></pre>
+
+<p>Finding the lower bounds of your dependencies might be tricky. The best way we’ve found so far is the following:</p>
+<ul>
+  <li>(in a virtual environment) Install a version of a dependency</li>
+  <li>Run tests</li>
+  <li>If they pass, try a lower dependency</li>
+  <li>If they fail, try a higher dependency</li>
+</ul>
+
+<p>This is obviously clunky, but hopefully you only have to do it once.</p>
+
+<h2 id="what-is-a-dependency">What is a dependency?</h2>
+
+<p>Great question. To me,</p>
+
+<blockquote>
+  <p>a dependency is any package that is explicitly imported in your package.</p>
+</blockquote>
+
+<h2 id="create-requirements-mintxt">Create requirements-min.txt</h2>
+
+<p>Once you’ve defined your dependencies, create a requirements-min.txt file in the root of your repository, with each dependency listed but with <code class="language-plaintext highlighter-rouge">&gt;=</code> replaced with <code class="language-plaintext highlighter-rouge">==</code>, e.g.:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>foo == 1.2
+</code></pre></div></div>
+
+<h2 id="the-atomic-unit-of-test">The atomic unit of test</h2>
+
+<p>Assuming the simplest Python package possible, with dependencies specified in setup.cfg and development dependencies specified in <code class="language-plaintext highlighter-rouge">requirements-dev.txt</code>, the most basic Github action would look something like this:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">name</span><span class="pi">:</span> <span class="s">CI</span>
+<span class="na">on</span><span class="pi">:</span>
+  <span class="na">push</span><span class="pi">:</span>
+    <span class="na">branches</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="s">main</span>
+  <span class="na">pull_request</span><span class="pi">:</span>
+<span class="na">jobs</span><span class="pi">:</span>
+  <span class="na">test</span><span class="pi">:</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">test</span>
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
+    <span class="na">steps</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v2</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/setup-python@v2</span>
+        <span class="na">with</span><span class="pi">:</span>
+          <span class="na">python-version</span><span class="pi">:</span> <span class="s1">'</span><span class="s">3.9'</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install .</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install development requirements</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install -r requirements-dev.txt</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Test</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pytest</span>
+</code></pre></div></div>
+
+<p>We will use this framework to define improvements to help test the use-cases outlined in the first section.</p>
+
+<h2 id="test-standard-min-and-pre-release">Test standard, min, and pre-release</h2>
+
+<p>The standard case stays the same as the atomic unit of test.</p>
+
+<p>The minimum version looks like this (snipped to the relevant bits):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;snip&gt;
+      - name: Install minimum versions
+        run: pip install -r requirements-min.txt
+      - name: Install
+        run: pip install .
+&lt;snip&gt;
+</code></pre></div></div>
+
+<p>Notice that the minimum versions need to be installed before the package.</p>
+
+<blockquote>
+  <p>It can be tricky to ensure that the <code class="language-plaintext highlighter-rouge">requirements-min.txt</code> file stays in-sync with <code class="language-plaintext highlighter-rouge">setup.cfg</code>.
+While you could generate the <code class="language-plaintext highlighter-rouge">requirements-min.txt</code> file automatically, we find it better to keep it explicit, and instead check to ensure consistency using a script, e.g. <a href="https://github.com/stac-utils/stactools/blob/d1e084f8df6c43626d76c6a2a33559c4ce8fe33e/scripts/check_minimum_requirements">this one</a>.</p>
+</blockquote>
+
+<p>Finally, the pre-release looks something like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;snip&gt;
+      - name: Install
+        run: pip install .
+      - name: Install pre-release versions
+        run: pip install -U --pre my-critical-dependency
+&lt;snip&gt;
+</code></pre></div></div>
+
+<h2 id="bonus-refactor-using-composite-github-actions">Bonus: Refactor using composite Github actions</h2>
+
+<p>If you’re repeating the same boilerplate setup over many Github actions jobs, it can be handy to refactor the boilerplate to a custom composite action.
+Github composite actions are exactly what they sound like: Github actions that are made up of other Github actions.
+I didn’t find a quick walkthrough of using a own-repository Github action, so here’s the steps:</p>
+<ul>
+  <li>Create a directory in your <code class="language-plaintext highlighter-rouge">.github</code> directory for your action, e.g. <code class="language-plaintext highlighter-rouge">.github/setup</code></li>
+  <li>Create an <code class="language-plaintext highlighter-rouge">.github/setup/action.yml</code></li>
+  <li>Set up your composite action.
+For a simple example, set up your pip cache and update pip:</li>
+</ul>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">name</span><span class="pi">:</span> <span class="s">Setup</span>
+<span class="na">description</span><span class="pi">:</span> <span class="s">Set up the pip cache</span>
+<span class="na">inputs</span><span class="pi">:</span>
+  <span class="na">pip-cache-hash</span><span class="pi">:</span>
+    <span class="na">description</span><span class="pi">:</span> <span class="s">The hash used for the pip cache</span>
+    <span class="na">required</span><span class="pi">:</span> <span class="s">False</span>
+    <span class="na">default</span><span class="pi">:</span> <span class="s">${{ hashFiles('setup.cfg', 'requirements-dev.txt') }}</span>
+<span class="na">runs</span><span class="pi">:</span>
+  <span class="na">using</span><span class="pi">:</span> <span class="s">composite</span>
+  <span class="na">steps</span><span class="pi">:</span>
+    <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/setup-python@v2</span>
+      <span class="na">with</span><span class="pi">:</span>
+        <span class="na">python-version</span><span class="pi">:</span> <span class="s1">'</span><span class="s">3.9'</span>
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Set up pip cache</span>
+      <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/cache@v2</span>
+      <span class="na">with</span><span class="pi">:</span>
+        <span class="na">path</span><span class="pi">:</span> <span class="s">~/.cache/pip</span>
+        <span class="na">key</span><span class="pi">:</span> <span class="s">$-pip-$</span>
+        <span class="na">restore-keys</span><span class="pi">:</span> <span class="s">$-pip-</span>
+    <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Update pip</span>
+      <span class="na">run</span><span class="pi">:</span> <span class="s">python -m pip install --upgrade pip</span>
+</code></pre></div></div>
+
+<p>Now you can use the action in your workflow.</p>
+
+<h2 id="complete-example">Complete example</h2>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="na">name</span><span class="pi">:</span> <span class="s">CI</span>
+<span class="na">on</span><span class="pi">:</span>
+  <span class="na">push</span><span class="pi">:</span>
+    <span class="na">branches</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="s">main</span>
+  <span class="na">pull_request</span><span class="pi">:</span>
+<span class="na">jobs</span><span class="pi">:</span>
+  <span class="na">test</span><span class="pi">:</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">test</span>
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
+    <span class="na">steps</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v2</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">./.github/setup</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install .</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install development requirements</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install -r requirements-dev.txt</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Test</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pytest</span>
+  <span class="na">min-version</span><span class="pi">:</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">min-version</span>
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
+    <span class="na">steps</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v2</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">./.github/setup</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install minimum versions</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install -r requirements-min.txt</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install .</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install development requirements</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install -r requirements-dev.txt</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Test</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pytest</span>
+  <span class="na">pre-release</span><span class="pi">:</span>
+    <span class="na">name</span><span class="pi">:</span> <span class="s">pre-release</span>
+    <span class="na">runs-on</span><span class="pi">:</span> <span class="s">ubuntu-latest</span>
+    <span class="na">steps</span><span class="pi">:</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">actions/checkout@v2</span>
+      <span class="pi">-</span> <span class="na">uses</span><span class="pi">:</span> <span class="s">./.github/setup</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install .</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install pre-release versions</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install -U --pre my-critical-dependency</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Install development requirements</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pip install -r requirements-dev.txt</span>
+      <span class="pi">-</span> <span class="na">name</span><span class="pi">:</span> <span class="s">Test</span>
+        <span class="na">run</span><span class="pi">:</span> <span class="s">pytest</span>
+</code></pre></div></div>
+
+<h2 id="in-conclusion">In conclusion</h2>
+
+<p>For a complete example of this implementation, with some extra bells and whistles (including a conda install and a Python version matrix), check out <a href="https://github.com/stac-utils/stactools/pull/228">this pull request</a>.
+In particular, the Github actions DRY-ification using the local composite action felt especially tasty – I will be re-using that pattern often.</p>
+
+<p>Here’s hoping this post helped explain how you might protect yourself from dependency breakages by using your CI as a defensive gate against your upstreams making changes that you haven’t expected.
+Cheers!</p>
+
+
+  </div><a class="u-url" href="/2022/02/18/dependency-protection-with-python-and-github-actions.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">@gadomski</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">@gadomski</li><li><a class="u-email" href="mailto:pete@gadom.ski">pete@gadom.ski</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/gadomski"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">gadomski</span></a></li><li><a href="https://www.twitter.com/petegadomski"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg> <span class="username">petegadomski</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>dogs and charts, mostly
+</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
