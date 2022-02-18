@@ -12,12 +12,12 @@ else
     git fetch origin
 fi
 
-git checkout master
-git pull origin master
+git checkout gh-pages
+git pull origin gh-pages
 cd ..
 bundle exec jekyll build
 cd _site
 git add .
-git commit -m "deploy.sh"
-git push origin master
+git commit -m "publish.sh"
+git push origin gh-pages
 cd ..
