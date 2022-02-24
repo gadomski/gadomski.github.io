@@ -24,4 +24,4 @@ jobs:
       - run: git config --global user.email "pete.gadomski@gmail.com"
       - run: git config --global user.name "Pete Gadomski"
       - name: Commit and push
-        run: cd _site && git commit -a -m "github actions" && git push
+        run: cd _site && git add . && git commit -m "github actions" && git push
