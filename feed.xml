@@ -1,5 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="http://www.gadom.ski/feed.xml" rel="self" type="application/atom+xml" /><link href="http://www.gadom.ski/" rel="alternate" type="text/html" /><updated>2022-07-22T12:15:17+00:00</updated><id>http://www.gadom.ski/feed.xml</id><title type="html">@gadomski</title><subtitle>dogs and charts, mostly
-</subtitle><entry><title type="html">Check Rust docs with Github actions</title><link href="http://www.gadom.ski/2022/02/24/check-docs-rust.html" rel="alternate" type="text/html" title="Check Rust docs with Github actions" /><published>2022-02-24T00:00:00+00:00</published><updated>2022-02-24T00:00:00+00:00</updated><id>http://www.gadom.ski/2022/02/24/check-docs-rust</id><content type="html" xml:base="http://www.gadom.ski/2022/02/24/check-docs-rust.html">&lt;p&gt;Because I am imperfect, I don’t always build my Rust docs before opening a PR.
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="http://www.gadom.ski/feed.xml" rel="self" type="application/atom+xml" /><link href="http://www.gadom.ski/" rel="alternate" type="text/html" /><updated>2022-08-25T06:28:52+00:00</updated><id>http://www.gadom.ski/feed.xml</id><title type="html">@gadomski</title><subtitle>dogs and charts, mostly
+</subtitle><entry><title type="html">FOSS4G 2022</title><link href="http://www.gadom.ski/2022/08/25/FOSS4G.html" rel="alternate" type="text/html" title="FOSS4G 2022" /><published>2022-08-25T00:00:00+00:00</published><updated>2022-08-25T00:00:00+00:00</updated><id>http://www.gadom.ski/2022/08/25/FOSS4G</id><content type="html" xml:base="http://www.gadom.ski/2022/08/25/FOSS4G.html">&lt;p align=&quot;center&quot;&gt;
+&lt;iframe src=&quot;https://docs.google.com/presentation/d/e/2PACX-1vT7p7rtoptMHwGf3GJL7qQQufsWCLSHXlTN3qShSm2DzhEIbL0DkvwV5WK78j2zmGxP7Hrfki07EihQ/embed?start=false&amp;amp;loop=false&amp;amp;delayms=3000&quot; frameborder=&quot;0&quot; width=&quot;480&quot; height=&quot;299&quot; allowfullscreen=&quot;true&quot; mozallowfullscreen=&quot;true&quot; webkitallowfullscreen=&quot;true&quot;&gt;&lt;/iframe&gt;
+&lt;/p&gt;
+
+&lt;p&gt;On Wednesday morning, I presented “STAC Best Practices and Tools”.
+The presentation is available above as embedded Google Slides.
+The presentation was recorded, and I’ll update this post with a link to the video if/when that becomes available.&lt;/p&gt;
+
+&lt;p&gt;It’s been a &lt;em&gt;blast&lt;/em&gt; at FOSS4G so far.
+Still have a couple of days and I can’t wait.
+So good to catch up with so many folks, some of whom I haven’t seen in over a decade.
+Full report (maybe) to come later.&lt;/p&gt;</content><author><name></name></author><category term="stac" /><category term="best-practices" /><summary type="html"></summary></entry><entry><title type="html">Check Rust docs with Github actions</title><link href="http://www.gadom.ski/2022/02/24/check-docs-rust.html" rel="alternate" type="text/html" title="Check Rust docs with Github actions" /><published>2022-02-24T00:00:00+00:00</published><updated>2022-02-24T00:00:00+00:00</updated><id>http://www.gadom.ski/2022/02/24/check-docs-rust</id><content type="html" xml:base="http://www.gadom.ski/2022/02/24/check-docs-rust.html">&lt;p&gt;Because I am imperfect, I don’t always build my Rust docs before opening a PR.
 I use a job to check for any documentation warnings via &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-Dwarnings&lt;/code&gt;:&lt;/p&gt;
 
 &lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;jobs&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
@@ -950,33 +961,4 @@ This works for my small-scale, local development, but I will eventually need to 
 &lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h2&gt;
 
 &lt;p&gt;Rust JSON API backend + Angular web frontend is a pretty swell combination that allows maximum flexibility and power for processing on the backend and good separability and performance on the frontend.
-With responsive styling from Bootstrap, this was a really easy way to stand up a mobile-and-desktop enabled website with custom data presentation quickly.&lt;/p&gt;</content><author><name></name></author><category term="atlas" /><category term="rust" /><category term="angular" /><category term="fabric" /><category term="bootstrap" /><category term="d3" /><summary type="html">We have a remote LiDAR system at the Helheim Glacier in southeast Greenland. This system, called ATLAS, was installed in the summer of 2015 to capture 3D scans of the glacier at regular intervals. These 3D scans can then be used to extract glacier velocities using, among other technologies, cpd.</summary></entry><entry><title type="html">Vertical datum conversions with PDAL</title><link href="http://www.gadom.ski/2017/05/31/vdatum-with-pdal.html" rel="alternate" type="text/html" title="Vertical datum conversions with PDAL" /><published>2017-05-31T00:00:00+00:00</published><updated>2017-05-31T00:00:00+00:00</updated><id>http://www.gadom.ski/2017/05/31/vdatum-with-pdal</id><content type="html" xml:base="http://www.gadom.ski/2017/05/31/vdatum-with-pdal.html">&lt;p&gt;In order to match collected point cloud data to existing records, it is often necessary to convert the data from one coordinate system to another.
-Some types of conversions, e.g. basic reprojections, can be completely described by mathematical functions, making them relatively straightforward.
-Converting between vertical datums, however, can be more challenging.&lt;/p&gt;
-
-&lt;p&gt;For a good introduction to vertical datums, &lt;a href=&quot;https://vdatum.noaa.gov/docs/datums.html&quot;&gt;NOAA has a quality tutorial&lt;/a&gt;.
-In this exercise, we are going to convert the vertical coordinates of a point cloud from a three-dimensional reference system, NAD 83 (1986), to a vertical datum, the North American Vertical Datum 1988 (NAVD 88).
-NAVD 88 is based on the Earth’s gravity field, which varies in space (and in time) based upon rock density, crustal thickness, and a variety of other factors.
-Earth’s gravity field can be expressed through a geoid, which is a (from the NOAA tutorial):&lt;/p&gt;
-
-&lt;blockquote&gt;
-  &lt;p&gt;equipotential surface, defined in the Earth’s gravity field, which best fits, in a least squares sense, global mean sea level (MSL)&lt;/p&gt;
-&lt;/blockquote&gt;
-
-&lt;p&gt;In order to use &lt;a href=&quot;https://www.pdal.io/&quot;&gt;PDAL&lt;/a&gt; to convert vertical coordinates to a new vertical datum, we’ll need to fetch the appropriate geoid.
-PDAL uses &lt;a href=&quot;http://proj4.org/&quot;&gt;proj.4&lt;/a&gt; under the hood, and proj.4 accepts geoid’s in NOAA VDatum’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;gtx&lt;/code&gt; file format.
-We can fetch the 12B geoid from the &lt;a href=&quot;https://vdatum.noaa.gov/download.php&quot;&gt;VDatum download website&lt;/a&gt;.
-Inside the 12B zipfile there is a file called &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;g2012b_conus.gtx&lt;/code&gt;; this is the geoid for the Continental United States (CONUS).
-We’ll use this file to convert our data.&lt;/p&gt;
-
-&lt;p&gt;For this example, we’ll convert data in NAD83 / UTM 18N, which has an &lt;a href=&quot;http://www.epsg.org/&quot;&gt;EPSG code&lt;/a&gt; of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;EPSG:26918&lt;/code&gt; using the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pdal translate&lt;/code&gt; subcommand.&lt;/p&gt;
-
-&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;pdal translate &lt;span class=&quot;nt&quot;&gt;-i&lt;/span&gt; infile.las &lt;span class=&quot;nt&quot;&gt;-o&lt;/span&gt; outfile.las &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
-    &lt;span class=&quot;nt&quot;&gt;-f&lt;/span&gt; reprojection &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
-    &lt;span class=&quot;nt&quot;&gt;--filters&lt;/span&gt;.reprojection.out_srs&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;+init=EPSG:26918 +geoidgrids=/path/to/vdatum/g2012b_conus.gtx&quot;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
-    &lt;span class=&quot;nt&quot;&gt;--writers&lt;/span&gt;.las.a_srs&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;EPSG:26918+5703
-&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
-
-&lt;p&gt;By providing the geoid path, PDAL will use proj.4 to convert each point to the NAVD88 vertical datum.
-The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;--writers.las.a_srs=EPSG:26918+5703&lt;/code&gt; option sets the spatial reference system of the output file to the compound EPSG code &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;EPSG:26918+5703&lt;/code&gt;.
-&lt;a href=&quot;http://spatialreference.org/ref/epsg/north-american-vertical-datum-of-1988-height/&quot;&gt;EPSG:5703&lt;/a&gt; is NAVD88.&lt;/p&gt;</content><author><name></name></author><category term="pdal" /><category term="vertical-datum" /><summary type="html">In order to match collected point cloud data to existing records, it is often necessary to convert the data from one coordinate system to another. Some types of conversions, e.g. basic reprojections, can be completely described by mathematical functions, making them relatively straightforward. Converting between vertical datums, however, can be more challenging.</summary></entry></feed>
+With responsive styling from Bootstrap, this was a really easy way to stand up a mobile-and-desktop enabled website with custom data presentation quickly.&lt;/p&gt;</content><author><name></name></author><category term="atlas" /><category term="rust" /><category term="angular" /><category term="fabric" /><category term="bootstrap" /><category term="d3" /><summary type="html">We have a remote LiDAR system at the Helheim Glacier in southeast Greenland. This system, called ATLAS, was installed in the summer of 2015 to capture 3D scans of the glacier at regular intervals. These 3D scans can then be used to extract glacier velocities using, among other technologies, cpd.</summary></entry></feed>
