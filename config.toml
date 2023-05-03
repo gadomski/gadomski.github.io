@@ -1,4 +1,4 @@
-base_url = "https://gadom.ski"
+base_url = "http://gadom.ski"
 title = "gadom.ski"
 description = "Pete Gadomski does geospatial software for Element 84"
 default_language = "en"
