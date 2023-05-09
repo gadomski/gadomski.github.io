@@ -1,5 +1,5 @@
 +++
-title = "STAC and the Planetary Comptuer"
+title = "STAC and the Planetary Computer"
 slug = "stac-and-the-pc"
 date = 2023-05-09
 
