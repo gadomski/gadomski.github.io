@@ -7,9 +7,20 @@ aliases = [
 ]
 
 [taxonomies]
-tags = ["python", "github", "github-actions"]
+tags = ["python", "github", "github-actions", "out-of-date"]
 categories = ["how-to"]
 +++
+
+![Iceberg](/img/iceberg.jpg)
+
+**NOTE: This post is out-of-date.**
+Or, as the dude would say
+
+> New s*** has come to light
+
+See ["Dependency protection with pyproject.toml"](@/posts/2023-05-10-pyproject-toml.md) for my latest thinking on this topic.
+
+---
 
 > Many thanks to Tom Augsburger for inspiring this post with [this issue](https://github.com/stac-utils/stactools/issues/227) and providing additional background on the problem space.
 
