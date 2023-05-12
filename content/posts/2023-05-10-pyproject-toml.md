@@ -67,7 +67,7 @@ for install_requires in filter(
     install_requires = install_requires.replace(">=", "==")
     requirements.append(install_requires)
 
-subprocess.run(["pip", "install", *requirements])
+subprocess.run(["pip", "install", *requirements], check=True)
 ```
 
 This depends on all core dependencies having a `>=` specifier, which they should.
