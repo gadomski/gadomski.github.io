@@ -1,7 +1,7 @@
 +++
 title = "About"
 path = "about"
-template = "pages.html"
+template = "info-page.html"
 +++
 
 Pete Gadomski is a geospatial software engineer (among other things) living in Longmont, CO.

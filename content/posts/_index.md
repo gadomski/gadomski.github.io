@@ -1,5 +1,5 @@
 +++
 title = "posts"
-template = "pages.html"
+template = "section.html"
 transparent = true
 +++

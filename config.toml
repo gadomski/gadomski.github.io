@@ -1,31 +1,32 @@
 base_url = "https://www.gadom.ski"
 title = "gadom.ski"
 description = "Geopsatial open-source"
+author = "Pete Gadomski"
 default_language = "en"
 taxonomies = [
     { name = "categories", feed = true },
     { name = "tags", feed = true },
 ]
-theme = "abridge"
-
-[markdown]
+theme = "tabi"
 
 [extra]
-author = "Pete Gadomski"
-headhr = true
-foothr = true
-keywords = "geospatial, software, raster, point cloud, vector, open source, stac"
+remote_repository_url = "https://github.com/gadomski/gadomski.github.io"
+show_previous_next_article_links = true
+quick_navigation_buttons = true
 menu = [
-    { url = "about", name = "About", slash = true, blank = false, size = "s110" },
-    { url = "categories", name = "Categories", slash = true, blank = false, size = "s110" },
-    { url = "tags", name = "Tags", slash = true, blank = false, size = "s110" },
-    { url = "publications", name = "Publications", slash = true, blank = false, size = "s110" },
+    { name = "about", url = "about", trailing_slash = true },
+    { name = "publications", url = "publications", trailing_slash = true },
 ]
-textlogo = '<font color="#f90">gadom</font>.ski'
-sitedesc = true
-copyright_override = "© 2017-$CURRENT_YEAR Pete Gadomski"
-footer_credit = false
-mail_encode = true
-feeds = true
-mail = "pete@gadom.ski"
-github = "gadomski"
+feed_icon = true
+email = "cGV0ZUBnYWRvbS5za2kK"
+socials = [
+    { name = "github", url = "https://github.com/gadomski", icon = "github" },
+    { name = "bluesky", url = "https://bsky.app/profile/gadom.ski", icon = "bluesky" },
+]
+footer_menu = [
+    { url = "privacy", name = "privacy", trailing_slash = true },
+    { name = "tags", url = "tags", trailing_slash = true },
+    { name = "categories", url = "categories", trailing_slash = true },
+    { url = "sitemap.xml", name = "sitemap", trailing_slash = false },
+]
+copyright = "$TITLE © $CURRENT_YEAR $AUTHOR"

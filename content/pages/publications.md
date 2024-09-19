@@ -1,7 +1,7 @@
 +++
 title = "Publications"
 path = "publications"
-template = "pages.html"
+template = "info-page.html"
 +++
 
 ## First author

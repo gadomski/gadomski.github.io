@@ -2,7 +2,7 @@
 title = "Privacy policy"
 description = "This page outlines the Privacy policy for this site, and the date at which this policy was put into effect."
 path = "privacy"
-template = "pages.html"
+template = "info-page.html"
 +++
 
 ## Privacy
