@@ -25,7 +25,7 @@ The rest of this post walks through the component parts of the atlas.lidar.io sy
 
 The ATLAS system is constantly logging information such as LiDAR scanner status, temperatures, power system status, and more.
 These data are compiled into hourly digest messages called "heartbeats".
-Heartbeats are transmitted via [Iridium](https://en.wikipedia.org/wiki/Iridium_satellite_constellation) [Short-Burst Data (SBD)](https://www.iridium.com/services/details/iridium-sbd) messages and received by a server process, [sbd-rs](https://github.com/gadomski/sbd-rs), running on our lidar.io box located at CRREL.
+Heartbeats are transmitted via [Iridium](https://en.wikipedia.org/wiki/Iridium_satellite_constellation) [Short-Burst Data (SBD)](https://www.iridium.com/services/iridium-sbd/) messages and received by a server process, [sbd-rs](https://github.com/gadomski/sbd-rs), running on our lidar.io box located at CRREL.
 The lidar.io box also receives remote camera images from multiple remote cameras via FTP.
 
 ### sbd-rs
@@ -66,7 +66,7 @@ Finally, the **glacio-bin** binary reads in a configuration file, builds the app
 
 The data are now available to the world, but this HTTP API does *no* actual web presentation work.
 I've separated out the web content into a non-Rust project of its own, so that other developers, who might not know Rust, can work on the front-end.
-The HTTP API can be used by multiple applications; in fact, the ATLAS_CAM picture at the top of this page is provided by the HTTP API, via the url <http://api.glac.io/cameras/ATLAS_CAM/images/latest/redirect>.
+The HTTP API can be used by multiple applications; in fact, the ATLAS_CAM picture that used to be at the top of this page was provided by the HTTP API.
 
 ## Data presentation
 

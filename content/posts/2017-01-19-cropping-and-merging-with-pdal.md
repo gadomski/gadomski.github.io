@@ -12,12 +12,12 @@ categories = ["how-to"]
 
 This is the first in a series of posts describing how to use [PDAL](http://www.pdal.io/) to develop automated, repeatable processes, the kind that can be tedious to do manually in [RiSCAN Pro](http://www.riegl.com/products/software-packages/riscan-pro/) or other such software.
 These posts are aimed at a medium-to-high-level user, one who is comfortable with the command line, writing makefiles, and basic scripting.
-The PDAL [tutorials](http://www.pdal.io/tutorial/index.html) and [workshop](http://www.pdal.io/workshop/index.html) might be a better start for a beginner user.
+The PDAL [tutorials](https://pdal.io/en/latest/tutorial/index.html) and [workshop](https://pdal.io/en/latest/workshop/index.html) might be a better start for a beginner user.
 
 You'll need the following softwares for this exercise:
 
 - [PDAL](http://www.pdal.io/)
-- [OGR](http://gdal.org/1.11/ogr/)
+- [GDAL](https://gdal.org/en/latest/download.html)
 - [Python](https://www.python.org/)
 
 ## The problem
@@ -43,7 +43,7 @@ We pick things up after we've exported a file for each scan position from RiSCAN
 We could have used PDAL to do the exporting, but that's a more advanced subject for a later day.
 I've organized the laz files and our AOI shapefile like this:
 
-```shell
+```sh
 $ tree .
 .
 ├── Makefile
@@ -103,7 +103,7 @@ So we manually specify the source spatial reference system with `--readers.las.s
 
 We can use make's parallelization to process all the files at once:
 
-```shell
+```sh
 make -j 5 cropped
 ```
 
@@ -124,7 +124,7 @@ laz/2013-05-01-StudyArea1.laz: $(CROPPED)
 
 Our tree should now look like this:
 
-```shell
+```sh
 $ tree .
 .
 ├── Makefile

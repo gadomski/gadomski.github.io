@@ -88,7 +88,7 @@ Great question. To me,
 
 Once you’ve defined your dependencies, create a requirements-min.txt file in the root of your repository, with each dependency listed but with `>=` replaced with `==`, e.g.:
 
-```text
+```
 foo == 1.2
 ```
 
@@ -128,7 +128,7 @@ The standard case stays the same as the atomic unit of test.
 
 The minimum version looks like this (snipped to the relevant bits):
 
-```text
+```
 <snip>
       - name: Install minimum versions
         run: pip install -r requirements-min.txt
@@ -144,7 +144,7 @@ Notice that the minimum versions need to be installed before the package.
 
 Finally, the pre-release looks something like this:
 
-```text
+```
 <snip>
       - name: Install
         run: pip install .

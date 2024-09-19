@@ -15,7 +15,7 @@ The CRREL/UCSV Energy Site (CUES) is a [snow research site on Mammoth Mountain, 
 ![East-looking panoramic photo of the CUES site](http://snow.ucsb.edu/sites/default/files/slides/20120908_122051.jpg)
 
 In February 2011 a [Riegl](http://www.riegl.com/) LMS-Z390 LiDAR scanner came online at the site, mounted in a glass enclosure on the central structure.
-This scanner regularly captures snow depths over a portion of the study area, and stores these snow depths on the [CUES web server](http://snow.ucsb.edu/level-0-raw-data-files) as `.3dd` files:
+This scanner regularly captures snow depths over a portion of the study area, and stores these snow depths on the CUES web server as `.3dd` files:
 
 ![An example of a scan of the CUES site](/img/cues-scan.png)
 
@@ -43,7 +43,7 @@ We'll assume you've already used `conv2asc.exe` on the `3dd` file and redirected
 [PDAL's text reader](http://www.pdal.io/stages/readers.text.html) expects reasonably well-formed text files.
 Our `conv2asc.exe` output looks like this, which isn't good enough:
 
-```shell
+```sh
 $ head txt/original/20161229-1315-30.Z390.frame.txt
 0.0000, 0.0000, 0.0000, 0.0000
 0.0000, 0.0000, 0.0000, 0.0000
@@ -60,7 +60,7 @@ $ head txt/original/20161229-1315-30.Z390.frame.txt
 We need to remove those spaces between the comma and the next number, and add a header.
 This is a simple two-step process:
 
-```shell
+```sh
 mkdir -p txt/cleaned
 echo "X,Y,Z,Intensity" > txt/cleaned/20161229-1315-30.Z390.frame.txt
 sed 's/, /,/g' txt/original/20161229-1315-30.Z390.frame.txt >> txt/cleaned/20161229-1315-30.Z390.frame.txt
@@ -68,7 +68,7 @@ sed 's/, /,/g' txt/original/20161229-1315-30.Z390.frame.txt >> txt/cleaned/20161
 
 We'll use PDAL to do the `(0., 0., 0.)` filtering and intensity scaling.
 The filtering can be done out of the box with [range filter](http://www.pdal.io/stages/filters.range.html), but we need to write some code to do the intensity scaling.
-We'll use the [programmable filter](http://www.pdal.io/stages/filters.programmable.html) to do the scaling work.
+We'll use the [Python filter](https://pdal.io/en/latest/stages/filters.python.html#filters-python) to do the scaling work.
 
 Create a file called `scripts/scale_intensity.py` with the following code:
 

@@ -35,17 +35,11 @@ We want to color-code dangerous slope angles while providing enough additional c
 ## Getting the data
 
 We'll use data from the [USGS 3D Elevation Program](https://nationalmap.gov/elevation.html) to produce our slope, hillshade, and contour grids.
-Our stream and lake overlays will come from the [National Hydrography Dataset](https://nhd.usgs.gov/), and the roads from the [National Transporation Dataset](https://catalog.data.gov/dataset/usgs-national-transportation-dataset-ntd-downloadable-data-collectionde7d2).
-All these products are browsable and downloadable through [The National Map](https://viewer.nationalmap.gov/basic/), but here's direct links to the datasets required for this exercise:
-
-- [n40w106](https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/GridFloat/USGS_NED_13_n40w106_GridFloat.zip) DEM as GridFloat
-- [n41w106](https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/GridFloat/USGS_NED_13_n41w106_GridFloat.zip) DEM as GridFloat
-- [Subbasin 10190005](https://prd-tnm.s3.amazonaws.com/StagedProducts/Hydrography/NHD/HU8/HighResolution/Shape/NHD_H_10190005_Shape.zip) as a shapefile
-- [Colorado roads](https://prd-tnm.s3.amazonaws.com/StagedProducts/Tran/Shape/TRAN_8_Colorado_GU_STATEORTERRITORY.zip) as a shapefile
-
+Our stream and lake overlays will come from the [National Hydrography Dataset](https://nhd.usgs.gov/), and the roads from the National Transporation Dataset.
+All these products are browsable and downloadable through [The National Map](https://apps.nationalmap.gov/viewer/).
 All told, it's about 4.6G of data, organized like this on my system:
 
-```shell
+```sh
 $ tree -P '*.shp|*.flt'
 .
 ├── dem
@@ -203,7 +197,7 @@ build/hidden-valley.ps: build/dem.tif build/slope.nc build/gradient.nc build/flo
 
 Add all of our derivative products to ensure they get built.
 
-```shell
+```sh
  grdimage build/slope.nc -Cbuild/slope.cpt -Ibuild/gradient.nc -Ba -B+t"Hidden Valley" -JM8i -Rbuild/slope.nc -K > $@
 ```
 
@@ -213,7 +207,7 @@ The `-R` instructs `grdimage` to use the bounds of the `build/slope.nc` grid as 
 The `-I` option adds the hillshade, the `-Ba` adds a border, the `-B+t` titles the plot.
 The `-K` option "keeps the output file open" so we can add more layers.
 
-```shell
+```sh
  grdcontour build/dem.tif -C20 -A100 -J -R -K -O >> $@
 ```
 
@@ -221,7 +215,7 @@ Add contours spaced 20 meters apart, labelled every 100 meters.
 The `-J` and `-R` options inherit the values used in the previous command, so we don't need to specify them again.
 The `-O` option instructs `grdcontour` to output "overlay" PostScript that is meant to be appended onto PostScript data "kept open" with `-K`.
 
-```shell
+```sh
  psxy build/flowline.gmt -W0.6p,'#377eb8' -J -R -K -O >> $@
  psxy build/waterbody.gmt -G'#377eb8' -J -R -K -O >> $@
  psxy build/roads.gmt -W1p,'#f781bf' -J -R -K -O >> $@
@@ -230,13 +224,13 @@ The `-O` option instructs `grdcontour` to output "overlay" PostScript that is me
 Add the vector data.
 The `-W` option specifies the pen used to draw lines, and the `-G` option specifies the fill.
 
-```shell
+```sh
  psbasemap -Lx5.2i/-0.7i+c$(YMIN)+w1k -J -R -K -O >> $@
 ```
 
 Add the length scale, set to 1km.
 
-```shell
+```sh
  psscale -D0i/-0.7i+w3i/0.2i+h -Cbuild/slope.cpt -G0/60 -By+l"Slope angle" -I -O >> $@
 ```
 
@@ -249,8 +243,6 @@ Now you can run `make build/hidden-valley.png` and get your map!
 ## Conclusion
 
 By automating this map-generation, you can easily create maps for new areas.
-I've souped up this example into [this project](https://github.com/gadomski/slope-maps), which I can use to quickly create maps of new areas I'm exploring.
-
 Here's the complete Makefile used for this example, along with a download script to grab the data you need:
 
 <!-- markdownlint-disable MD033 -->

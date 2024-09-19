@@ -37,7 +37,7 @@ jobs:
 
 If there are any warnings (e.g. a dangling link), CI will fail, prompting me to go back and fix my docs:
 
-```text
+```
 Documenting stac v0.0.3 (/home/runner/work/stac-rs/stac-rs)
 error: unresolved link to `Href`
   --> src/read.rs:39:34

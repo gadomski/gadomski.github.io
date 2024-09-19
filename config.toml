@@ -18,8 +18,8 @@ remote_repository_url = "https://github.com/gadomski/gadomski.github.io"
 show_previous_next_article_links = true
 quick_navigation_buttons = true
 menu = [
+    { name = "archive", url = "archive", trailing_slash = true },
     { name = "about", url = "about", trailing_slash = true },
-    { name = "publications", url = "publications", trailing_slash = true },
 ]
 feed_icon = true
 email = "cGV0ZUBnYWRvbS5za2kK"
@@ -28,9 +28,10 @@ socials = [
     { name = "bluesky", url = "https://bsky.app/profile/gadom.ski", icon = "bluesky" },
 ]
 footer_menu = [
-    { url = "privacy", name = "privacy", trailing_slash = true },
     { name = "tags", url = "tags", trailing_slash = true },
     { name = "categories", url = "categories", trailing_slash = true },
+    { name = "publications", url = "publications", trailing_slash = true },
+    { url = "privacy", name = "privacy", trailing_slash = true },
     { url = "sitemap.xml", name = "sitemap", trailing_slash = false },
 ]
 copyright = "$TITLE © $CURRENT_YEAR $AUTHOR"

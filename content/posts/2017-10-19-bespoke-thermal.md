@@ -51,7 +51,7 @@ You can see the methods used to go up and down this "coordinate ladder" in [the 
 
 In order to convert points from the CMCS to actual image pixels, certain properties of the camera itself must be known or discovered.
 We've developed a camera calibration for our InfraTec VarioCAM HD, and this calibration is contained inside of the RiSCAN Pro project.
-The math underlying this calibration is beyond me, but it is laid out exactly in the Riegl project documentation, so I simply tranferred it over to [my Rust library](https://docs.rs/riscan-pro/0.2.1/src/riscan_pro/camera_calibration.rs.html#70-105).
+The math underlying this calibration is beyond me, but it is laid out exactly in the Riegl project documentation, so I simply tranferred it over to [my Rust library](https://docs.rs/riscan-pro/0.2.1/src/riscan_pro/camera_calibration.rs.html).
 
 The camera calibration converts three-dimensional CMCS points to a two-dimensional pixel.
 This math isn't perfect &mdash; it can produce "valid" pixel values for points that are, e.g., behind the camera.
@@ -72,7 +72,7 @@ I made a FFI wrapper around their library and a helper library in the Rust works
 
 A similar situation presents itself with the thermal data.
 InfraTec's `irb` format is closed and proprietary, but they also provide a library[^3] for reading `irb` files.
-Again, I wrote a FFI wrapper and helper library[^4], this time named [irbacs-sys](https://github.com/gadomski/irbacs-sys) and [irb-rs](https://github.com/gadomski/irb-rs) respectively.
+Again, I wrote a FFI wrapper and helper library, this time named [irb-rs](https://github.com/gadomski/irb-rs).
 
 The pieces are now all set up.
 To review, these are the individual rust crates we have so far:
@@ -97,7 +97,7 @@ The basic mechanics are pretty simple:
 4. Write the `las` point out to a file, one output file per input `rxp` file.
 
 The `las` format doesn't do custom attributes well.
-The extra bytes mechanism does exist for las 1.4, but it's not universally supported[^5].
+The extra bytes mechanism does exist for las 1.4, but it's not universally supported[^4].
 The `GpsTime` field is convenient for us, since it's (a) a double field and (b) pretty useless for our TLS data.
 So we shove the temperature value into there.
 
@@ -129,7 +129,3 @@ I won't be sad when Riegl does this integration themselves, but until then, this
 [^2]: To their customers.
 
 [^3]: You think they'd give this to non-customers? SMH.
-
-[^4]: Discerning readers might notice that I used a workspace for my Riegl wrappers, but two seperate repositories for my InfraTec wrappers. Why? The `irb-rs` library includes some code that doesn't require `irbacs-sys` to run, namely the ability to read text exports created by InfraTec software. Workspaces seem to work best when you don't fiddle with features much -- when `cargo build --all` Just Works and builds everything. Since the Riegl stuff is very tightly integrated, it made sense to be a workspace -- less so for the InfraTec stuff.
-
-[^5]: In particular, QT Modeler does not support extra bytes AFAICT.

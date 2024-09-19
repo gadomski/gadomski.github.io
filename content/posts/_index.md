@@ -1,5 +1,7 @@
 +++
-title = "posts"
+paginate_by = 5
+title = "Posts"
+sort_by = "date"
 template = "section.html"
-transparent = true
+insert_anchor_links = "left"
 +++

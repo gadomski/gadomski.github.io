@@ -6,7 +6,7 @@ My personal wobsite.
 
 First, install [zola](https://www.getzola.org/):
 
-```shell
+```sh
 brew install zola
 ```
 

@@ -22,7 +22,7 @@ One of the many reservoirs we surveyed:
 One small but crucial part of this operation is the control.
 While the iXblue IMU/GNSS system provides real-time location and orientation information, these data are not accurate enough for good airborne surveys.
 Our position, in particular, needs to be corrected using ground-based differential GNSS.
-One source of ground-based control is the extensive [UNAVCO PBO network](https://www.unavco.org/instrumentation/networks/status/pbo), which is particularity useful in the western United States, where we were working.
+One source of ground-based control is the extensive [UNAVCO PBO network](https://www.unavco.org/instrumentation/networks/status/nota), which is particularity useful in the western United States, where we were working.
 
 Before we began our project, we contacted UNAVCO and requested that they log 1Hz data at 34 PBO sites that were near our regions of interest.
 After the completion of our flights, UNAVCO loaded these 1Hz data to their [PBO FTP site](https://www.unavco.org/data/gps-gnss/ftp/ftp.html), which we then needed to retrieve.
@@ -30,7 +30,7 @@ To ensure that we don't miss any data, we wanted to download every site for ever
 
 First, I created a text file, `pbo-sites.txt`, with each PBO site name, e.g.:
 
-```text
+```
 azu1
 bbdm
 bkms

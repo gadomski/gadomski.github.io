@@ -27,7 +27,7 @@ We can fetch the 12B geoid from the [VDatum download website](https://vdatum.noa
 Inside the 12B zipfile there is a file called `g2012b_conus.gtx`; this is the geoid for the Continental United States (CONUS).
 We'll use this file to convert our data.
 
-For this example, we'll convert data in NAD83 / UTM 18N, which has an [EPSG code](http://www.epsg.org/) of `EPSG:26918` using the `pdal translate` subcommand.
+For this example, we'll convert data in NAD83 / UTM 18N, which has an [EPSG code](https://www.epsg.org/) of `EPSG:26918` using the `pdal translate` subcommand.
 
 ```bash
 pdal translate -i infile.las -o outfile.las \
@@ -38,4 +38,4 @@ pdal translate -i infile.las -o outfile.las \
 
 By providing the geoid path, PDAL will use proj.4 to convert each point to the NAVD88 vertical datum.
 The `--writers.las.a_srs=EPSG:26918+5703` option sets the spatial reference system of the output file to the compound EPSG code `EPSG:26918+5703`.
-[EPSG:5703](http://spatialreference.org/ref/epsg/north-american-vertical-datum-of-1988-height/) is NAVD88.
+[EPSG:5703](https://spatialreference.org/ref/epsg/5703/) is NAVD88.
