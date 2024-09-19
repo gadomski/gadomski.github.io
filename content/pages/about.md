@@ -4,12 +4,13 @@ path = "about"
 template = "info-page.html"
 +++
 
-Pete Gadomski is a geospatial software engineer (among other things) living in Longmont, CO.
-Previously, he has worked as:
+Pete Gadomski is a open source geospatial software engineer (among other things) living in Longmont, CO.
+Previous art:
 
 - Director of the Aerospace Software Business Unit, Senior Geospatial Software Engineer, and Senior Technical Manager at [Element 84](https://www.element84.com/)
-- Senior Test Engineer at [Ball Aerospace](https://www.baesystems.com/en-us/our-company/inc-businesses/space-and-mission-systems)
-- Research Physical Scientist at the [Cold Regions Research and Engineering Laboratory (CRREL)](https://www.erdc.usace.army.mil/Locations/CRREL/)
+- (briefly) Lidar Algorithm Specialist at [NSIDC](https://nsidc.org) working on Total Propagated Uncertainty (TPU) (incomplete work at [leeward](https://github.com/gadomski/leeward))
+- Senior Test Engineer at [Ball Aerospace](https://www.baesystems.com/en-us/our-company/inc-businesses/space-and-mission-systems) "specializing" in RF systems (I say "specializing" because I came in knowing very little, but learned a lot)
+- Research Physical Scientist at the [Cold Regions Research and Engineering Laboratory (CRREL)](https://www.erdc.usace.army.mil/Locations/CRREL/) with a focus on applying lidar to snow and ice research
 
 You can download his complete resume [here](/pdf/2024-06-GadomskiResume.pdf).
 
