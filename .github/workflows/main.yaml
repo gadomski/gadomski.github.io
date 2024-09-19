@@ -19,7 +19,7 @@ jobs:
           tool: zola@0.19.1
       - name: Build
         run: zola build
-      - uses: actions/upload-pages-artifact@v1
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: public
   deploy:
