@@ -1,6 +1,5 @@
 +++
 title = "posts"
-template = "posts.html"
+template = "pages.html"
 transparent = true
-insert_anchor_links = "heading"
 +++
