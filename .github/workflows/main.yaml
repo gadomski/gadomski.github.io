@@ -16,7 +16,7 @@ jobs:
       - name: Install zola
         uses: taiki-e/install-action@v2
         with:
-          tool: zola@0.17.1
+          tool: zola@0.19.1
       - name: Build
         run: zola build
       - uses: actions/upload-pages-artifact@v1
