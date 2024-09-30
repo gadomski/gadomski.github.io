@@ -220,7 +220,7 @@ Let's look at things from a scientist's perspective:
 ![Coincident, discoverable, and accessible](/img/cda.png)
 
 The more coincident, discoverable, and accessible (CDA)[^4] datasets that are available, the more things you can do — sometimes, a new dataset will spark a new idea and a whole new area of research.
-The government has a lot of datasets, and the commercial providers have more, meaning that in order to maximize the scientific return, **the government should spend time and resources more datasets available from the commercial archive**.
+The government has a lot of datasets, and the commercial providers have more[^5], meaning that in order to maximize the scientific return, **the government should spend time and resources to make more datasets available from the commercial (and other-governmental) archive**.
 
 This doesn't have to be overly complex.
 With the rise of [cloud-native geospatial](https://cloudnativegeo.org/), we have more formats and tools to store, index, search, and use data without having to stand up and maintain servers:
@@ -245,3 +245,4 @@ _This post is a companion to an identically-named lightning talk I'll be giving 
 [^2]: That's not to say that there isn't a place for long "about" pages, or deep dives into specific questions.  But these pages shouldn't be the first thing you see, they should be (wait for it) discoverable.
 [^3]: Her keynote was titled "From Competition to Connection: Geospatial Technologies and the Path to Climate Justice"
 [^4]: I just googled this term and nothing obvious popped up, so this might be made up? But I like it, I think.
+[^5]: So do other governments, e.g. the European Space Agency
