@@ -2,6 +2,7 @@
 title = "Rust and geospatial"
 slug = "rust-and-geospatial"
 date = 2024-10-06
+description = "Rust can be useful for building geospatial systems, but it's not a silver bullet."
 
 [taxonomies]
 tags = ["rust", "geospatial"]
@@ -16,6 +17,11 @@ Here's some high-level thoughts, based upon my roughly ten years of experience i
 The Python geospatial tooling stack is really strong because of mature, well-supported projects like [rasterio](https://rasterio.readthedocs.io), [xarray](https://docs.xarray.dev), [geopandas](https://geopandas.org), and many others.
 If you're doing "geo-native" work where you're opening lots of files, doing analysis, creating visualizations, stick to Python.
 Rust is better at "geo-adjacent" stuff, such as reading and writing formats, building servers, and the like.
+
+## Bindings are great
+
+The tooling to create bindings between Rust and other languages (e.g. Python, Javascript) have come a long way in the last few years.
+It's now pretty trivial to expose parts of your Rust library via functions and data structures in other languages, and this will likely be a place where we'll see significant work in the next few years. 
 
 ## Just because it's written in Rust doesn't mean it's faster
 

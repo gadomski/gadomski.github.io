@@ -2,6 +2,7 @@
 title = "Let's apply dumb economics to the use of remote sensing data"
 slug = "dumb-economics-remote-sensing"
 date = 2024-09-26
+description = "The US government should build searchable indices (e.g. STAC) for their geospatial data, and it should devote resources (aka money) to helping open commercial satellite companies' archives."
 
 [taxonomies]
 tags = ["remote-sensing", "stac", "economics"]
