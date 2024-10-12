@@ -7,7 +7,7 @@ aliases = [
 ]
 
 [taxonomies]
-tags = ["python", "github", "github-actions", "out-of-date"]
+tags = ["python", "github", "github-actions", "out-of-date", "dependency-protection"]
 categories = ["how-to"]
 +++
 
@@ -18,7 +18,7 @@ Or, as the dude would say
 
 > New s*** has come to light
 
-See ["Dependency protection with pyproject.toml"](@/posts/2023-05-10-pyproject-toml.md) for my latest thinking on this topic.
+See [Dependency protection with pyproject.toml](@/posts/2023-05-10-pyproject-toml.md) for my latest thinking on this topic.
 
 ---
 

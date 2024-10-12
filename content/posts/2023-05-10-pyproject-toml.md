@@ -4,9 +4,20 @@ slug = "dependency-protection-pyproject-toml"
 date = 2023-05-10
 
 [taxonomies]
-tags = ["python", "github", "github-actions"]
+tags = ["python", "github", "github-actions", "dependency-protection", "out-of-date"]
 categories = ["how-to"]
 +++
+
+![Iceberg](/img/iceberg.jpg)
+
+**NOTE: This post is out-of-date.**
+Or, as the dude would say
+
+> New s*** has come to light
+
+See [Just use uv](@/posts/2023-05-10-pyproject-toml.md) for my latest thinking on this topic (spoiler: you should just use [uv](https://docs.astral.sh/uv)).
+
+---
 
 This is a follow up post to ["Dependency protection with Python and Github actions"](@/posts/2022-02-18-dependency-protection-with-python-and-github-actions.md), where I describe a relatively complex setup that uses `setup.cfg` and external requirement files to test against our minimum set of dependencies.
 With the rise of `pyproject.toml` as the standard way of specifying project metadata, and [**setuptools'** support for the standard](https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html), we can simplify our CI system quite a bit.
