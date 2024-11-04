@@ -8,6 +8,7 @@ taxonomies = [
     { name = "tags", feed = true },
 ]
 theme = "tabi"
+generate_feeds = true
 
 [markdown]
 highlight_code = true
