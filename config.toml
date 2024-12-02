@@ -1,6 +1,6 @@
 base_url = "https://www.gadom.ski"
 title = "gadom.ski"
-description = "Geopsatial open source"
+description = "Geospatial open source"
 author = "Pete Gadomski"
 default_language = "en"
 taxonomies = [
