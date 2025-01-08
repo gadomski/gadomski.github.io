@@ -6,6 +6,7 @@ template = "info-page.html"
 
 ## First author
 
+- Gadomski et al., (2025). antimeridian: A Python package for correcting geometries that cross the 180th meridian. Journal of Open Source Software, 10(105), 7530, <https://doi.org/10.21105/joss.07530>
 - Gadomski, P. J., Finnegan, D. C., LeWinter, A. L., Stearns, L. a., Kershner, C. M., & Hanlon, G. (2017). Three summer of high-resolution, high-accuracy velocity data of Helheim Glacier, as measured by an automated terrestrial LiDAR scanner: methods, challenges, and applications. In AGU Fall Meeting Abstracts.
 - Gadomski, P. J. (2016). Measuring Glacier Surface Velocities With LiDAR: A Comparison of Three-Dimensional Change Detection Methods. University of Houston.
 - Gadomski, P. J., Deems, J. S., Glennie, C. L., Hartzell, P. J., Butler, H., & Finnegan, D. C. (2015). Calculating LiDAR Point Cloud Uncertainty and Propagating Uncertainty to Snow-Water Equivalent Data Products. In 2015 AGU Fall Meeting.
