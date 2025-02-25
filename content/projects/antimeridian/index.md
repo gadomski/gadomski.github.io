@@ -12,4 +12,4 @@ A Python module for correcting geometries that cross the antimeridian.
 
 - [Github](https://github.com/gadomski/antimeridian/)
 - [Documentation](https://www.gadom.ski/antimeridian/latest/)
-- [JOSS paper (in review)](https://github.com/gadomski/antimeridian/blob/main/docs/paper.md)
+- [JOSS paper](https://joss.theoj.org/papers/10.21105/joss.07530)
