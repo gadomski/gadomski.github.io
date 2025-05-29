@@ -1,7 +1,7 @@
 +++
-title = "Presentations"
-description = "Links to my presentations"
-path = "presentations"
+title = "Talks"
+description = "Links to my talks"
+path = "talks"
 template = "info-page.html"
 +++
 
