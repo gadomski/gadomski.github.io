@@ -19,7 +19,7 @@ remote_repository_url = "https://github.com/gadomski/gadomski.github.io"
 show_previous_next_article_links = true
 quick_navigation_buttons = true
 menu = [
-    { name = "presentations", url = "presentations" },
+    { name = "talks", url = "talks", trailing_slash = true },
     { name = "archive", url = "archive", trailing_slash = true },
     { name = "about", url = "about", trailing_slash = true },
 ]
