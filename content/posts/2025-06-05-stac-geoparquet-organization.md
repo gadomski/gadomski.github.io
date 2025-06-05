@@ -181,7 +181,7 @@ A little less download, and a lot faster!
 ### Partitioned and sorted
 
 How about if we search in the sorted dataset?
-Note that we have to tweak the ID, since we appended the datetime.
+Note that we have to tweak the ID, since we prepended the datetime.
 
 ```text
 explain analyze select id from read_parquet('s3://stac-fastapi-geoparquet-labs-375/its-live-partitioned-sorted/**/*.parquet') where id = '2008-12-31T19:26:47Z-LE07_L1GT_116115_20081215_20200912_02_T2_X_LE07_L1GT_114115_20090118_20200912_02_T2_G0120V02_P097';
