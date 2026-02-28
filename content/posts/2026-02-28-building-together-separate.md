@@ -13,6 +13,8 @@ On Friday, we wrapped up Development Seed Team Week 2026 and [said goodbye to ou
 Our organization ("less of a company and more of a co-op", according to one) manages to bind sixty-odd people who are scattered all over the world into a mostly-self-organizing system.
 The whys-and-wherefores of our operations are constantly evolving, but there's some common themes that we've kept over the years[^1].
 
+![](/img/2026-02-28-blagden-alley.jpg)
+
 I thought it could be useful to distill those down here, both to help clarify my own thinking and possibly help others who are trying to grow similar organizations.
 
 ## Write your ideas
