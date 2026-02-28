@@ -52,7 +52,7 @@ The same goes for your [ideas](#write-your-ideas); unless there's a very good re
 We don't do _everything_ in Github at Development Seed.
 We use Google Drive for proposals and spreadsheets, and we use a huge suite of tools (Figma, Miro, etc...) for collaborative communication, design, and ideation.
 These tools are designed to produce a single artifact (proposal, documentation, design); they might have a "change history", but that's not the key output.
-For a proposals that's fine or maybe even good, but a conversation's history is as important as its final outcome.
+For a proposals that's fine/good, but a conversation's history is as important as its final outcome.
 
 Keep your communication in threaded mediums (e.g. Github, Slack) and keep them _out_ of "artifact creators" like Google Drive or wikis.
 
