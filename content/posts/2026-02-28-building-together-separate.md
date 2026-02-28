@@ -42,11 +42,12 @@ Here's why:
 - You never know who might get benefit from reading your messages.
 - Use threads to reduce channel noise.
   Don't like threads?
-  Tough, learn to like them.
+  Tough, learn to like (or at least tolerate) them.
 - When things feel awkward or too "meaningful" for a Slack thread, summarize the conversation as an [issue](#write-your-ideas) and move the conversation there.
 
 Obviously, there's exceptions around personal communications, privileged client information, and HR-adjacent issues.
-But in general, direct messages are an anti-pattern and multi-person DMs that are more than quick chats should be converted to public channels.
+But in general, direct messages are an anti-pattern.
+Multi-person DMs that are more than quick chats should be converted to public channels.
 The same goes for your [ideas](#write-your-ideas); unless there's a very good reason for them to be private, make them public.
 
 ## Understand the difference between communication and creation
