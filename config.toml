@@ -10,8 +10,9 @@ taxonomies = [
 theme = "tabi"
 generate_feeds = true
 
-[markdown]
-highlight_code = true
+[markdown.highlighting]
+theme = "catppuccin-frappe"
+style = "class"
 
 [extra]
 enable_csp = false
