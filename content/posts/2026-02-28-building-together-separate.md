@@ -20,7 +20,7 @@ I thought it could be useful to distill those down here, both to help clarify my
 ## Write your ideas
 
 It seems obvious but it's so often forgotten — **write your ideas down**.
-Conservations (whether they're verbal, typed, or in some other mode) are wonderful for shaping ideas within a group of people.
+Conversations (whether they're verbal, typed, or in some other mode) are wonderful for shaping ideas within a group of people.
 Once the idea is shaped, or it's reached the point where it needs decisions or research, _write the idea down_ in a searchable, linkable, and shareable place.
 This gives you a checkpoint in your own reasoning, and allows others to inspect how you're thinking about a problem.
 
