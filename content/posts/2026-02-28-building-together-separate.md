@@ -38,7 +38,7 @@ Our hot take is that you should do it anyway.
 Here's why:
 
 - You never know who might get benefit from reading your messages.
-- Use threads to reduce main channel noise.
+- Use threads to reduce channel noise.
   Don't like threads?
   Tough, learn to like them.
 - When things feel awkward or too "meaningful" for a Slack thread, summarize the conversation as an [issue](#write-your-ideas) and move the conversation there.
