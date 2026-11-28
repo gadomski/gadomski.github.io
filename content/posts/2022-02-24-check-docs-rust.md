@@ -14,6 +14,7 @@ categories = ["how-to"]
 Because I am imperfect, I don't always build my Rust docs before opening a PR.
 I use a job to check for any documentation warnings via `-Dwarnings`:
 
+{% raw %}
 ```yaml
 jobs:
     doc:
@@ -30,10 +31,11 @@ jobs:
                 ~/.cargo/registry/cache/
                 ~/.cargo/git/db/
                 target/
-            key: ${{ '{{' }} runner.os }}-cargo-${{ '{{' }} hashFiles('Cargo.toml') }}
+            key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml') }}
         - name: Doc
             run: cargo doc
 ```
+{% endraw %}
 
 If there are any warnings (e.g. a dangling link), CI will fail, prompting me to go back and fix my docs:
 

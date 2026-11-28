@@ -164,6 +164,7 @@ I didn’t find a quick walkthrough of using a own-repository Github action, so 
 - Set up your composite action.
   For a simple example, set up your pip cache and update pip:
 
+{% raw %}
 ```yaml
 name: Setup
 description: Set up the pip cache
@@ -171,7 +172,7 @@ inputs:
   pip-cache-hash:
     description: The hash used for the pip cache
     required: False
-    default: ${{ '{{' }} hashFiles('setup.cfg', 'requirements-dev.txt') }}
+    default: ${{ hashFiles('setup.cfg', 'requirements-dev.txt') }}
 runs:
   using: composite
   steps:
@@ -187,6 +188,7 @@ runs:
     - name: Update pip
       run: python -m pip install --upgrade pip
 ```
+{% endraw %}
 
 Now you can use the action in your workflow.
 

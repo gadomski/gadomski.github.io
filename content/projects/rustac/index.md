@@ -8,7 +8,7 @@ local_image = "projects/rustac/rustac.png"
 canonical_url = "https://stac-utils.github.io/rustac"
 +++
 
-{{ resize_image(path="projects/rustac/rustac.png", width=200, height=200, op="fit") }}
+{{< resize_image path="projects/rustac/rustac.png" width={200} height={200} op="fit" />}}
 
 The power of Rust for the STAC ecosystem
 
