@@ -14,7 +14,7 @@ jobs:
         with:
           submodules: true
       - name: Install zola
-        uses: taiki-e/install-action@v2.90.3
+        uses: taiki-e/install-action@v2.90.8
         with:
           tool: zola@0.23.6
       - name: Build
